@@ -54,34 +54,41 @@ namespace YoutubeDownloaderWpf.Services
         {
             var argsBuilder = new StringBuilder();
 
-            // Cấu hình output và format
+            // 1. Cấu hình Output
             string outputTemplate = Path.Combine(outputFolder, "%(title)s.%(ext)s");
-            // Thêm encoding utf8 để tránh lỗi hiển thị tên file tiếng Việt
             argsBuilder.Append($" --encoding utf8 -o \"{outputTemplate}\"");
+
+            // 2. Format và Merge
             argsBuilder.Append(" -f \"bestvideo+bestaudio/best\" --merge-output-format mp4");
             argsBuilder.Append(" --no-check-certificate --ignore-errors --no-mtime");
 
-            // Subtitle
+            // ---> FIX QUAN TRỌNG: CHỈ ĐỊNH RÕ ĐƯỜNG DẪN FFMPEG <---
+            // Nếu không có dòng này, yt-dlp sẽ không tìm thấy ffmpeg để ghép file
+            if (File.Exists(FfmpegPath))
+            {
+                argsBuilder.Append($" --ffmpeg-location \"{FfmpegPath}\"");
+            }
+
+            // 3. Subtitle
             if (!string.IsNullOrEmpty(subLangs))
             {
                 argsBuilder.Append($" --write-sub --write-auto-sub --sub-lang \"{subLangs}\"");
             }
 
-            // Cookies
+            // 4. Cookies
             if (!string.IsNullOrEmpty(cookiePath) && File.Exists(cookiePath))
             {
                 argsBuilder.Append($" --cookies \"{cookiePath}\"");
             }
 
-            // URL
+            // 5. URL
             argsBuilder.Append($" \"{url}\"");
 
-            // Regex bắt tiến độ
+            // --- XỬ LÝ PROCESS ---
             var progressRegex = new Regex(@"\[download\]\s+(\d+\.?\d*)%");
-            var speedRegex = new Regex(@"at\s+(\S+)");
-
             string finalFilename = "";
             var errorLog = new StringBuilder();
+            bool isMerging = false; // Cờ đánh dấu đang ghép file
 
             try
             {
@@ -89,51 +96,70 @@ namespace YoutubeDownloaderWpf.Services
                 {
                     if (string.IsNullOrWhiteSpace(line)) return;
 
-                    // Log dòng raw để debug (nếu cần xem nó đang chạy gì)
-                    Debug.WriteLine($"[YTDLP]: {line}");
+                    // Debug: Xem log thực tế yt-dlp trả về
+                    Debug.WriteLine(line);
 
-                    // Lấy tên file
-                    if (line.Contains("[Merger] Merging formats into") || line.Contains("Destination:"))
+                    // Bắt sự kiện bắt đầu ghép file
+                    if (line.Contains("[Merger]") || line.Contains("Merging formats"))
                     {
-                        var parts = line.Split('"');
-                        if (parts.Length > 1) finalFilename = parts[1];
-                        else if (line.Contains("Destination: ")) finalFilename = line.Replace("Destination: ", "").Trim();
+                        isMerging = true;
+                        // Hack nhẹ: Báo progress đặc biệt để UI biết đang xử lý
+                        progress?.Report(new SimpleProgress { Progress = 0.99, DownloadSpeed = "Đang ghép file..." });
                     }
 
-                    // Parse tiến độ
-                    var match = progressRegex.Match(line);
-                    if (match.Success && progress != null)
+                    // Lấy tên file kết quả
+                    if (line.Contains("Destination:") && !line.Contains(".part"))
                     {
-                        if (double.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double p))
-                        {
-                            string speed = "N/A";
-                            var speedMatch = speedRegex.Match(line);
-                            if (speedMatch.Success) speed = speedMatch.Groups[1].Value;
+                        // Logic cũ có thể trượt, dùng logic đơn giản hơn:
+                        // Lấy phần text sau "Destination: "
+                        finalFilename = line.Replace("Destination: ", "").Trim();
+                    }
+                    // Trường hợp file đã tồn tại và yt-dlp bỏ qua tải
+                    else if (line.Contains("has already been downloaded"))
+                    {
+                        // Cố gắng parse tên file từ dòng thông báo
+                        // Log mẫu: [download] Downloads\VideoName.mp4 has already been downloaded
+                        var matchFile = Regex.Match(line, @"\[download\]\s+(.*?)\s+has already been downloaded");
+                        if (matchFile.Success) finalFilename = matchFile.Groups[1].Value;
+                        progress?.Report(new SimpleProgress { Progress = 1.0, DownloadSpeed = "Hoàn tất" });
+                    }
 
-                            // Report về UI
-                            progress.Report(new SimpleProgress { Progress = p / 100.0, DownloadSpeed = speed });
+                    // Parse tiến độ tải (Chỉ parse khi CHƯA ghép file)
+                    if (!isMerging)
+                    {
+                        var match = progressRegex.Match(line);
+                        if (match.Success && progress != null)
+                        {
+                            if (double.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double p))
+                            {
+                                // Nếu p = 100% nhưng chưa xong hẳn (còn merge), ta chỉ để 99% thôi
+                                double reportValue = (p >= 100) ? 0.99 : p / 100.0;
+                                progress.Report(new SimpleProgress { Progress = reportValue, DownloadSpeed = "" });
+                            }
                         }
                     }
                 },
-                (errLine) =>
-                {
-                    Debug.WriteLine($"[ERROR]: {errLine}");
-                    errorLog.AppendLine(errLine);
-                });
+                (errLine) => errorLog.AppendLine(errLine));
 
-                if (exitCode != 0 && string.IsNullOrEmpty(finalFilename))
+                // Kiểm tra kết quả
+                // Nếu exitCode = 0 (Thành công)
+                if (exitCode == 0)
+                {
+                    // Nếu không bắt được tên file từ Log (do yt-dlp thay đổi format log), 
+                    // ta thử tìm file mới nhất trong thư mục downloads khớp với title (Optional logic)
+                    // Nhưng tốt nhất là trả về true.
+                    return new SimpleRunResult<string>(true, null, finalFilename);
+                }
+                else
                 {
                     return new SimpleRunResult<string>(false, $"Lỗi (Code {exitCode}): " + errorLog.ToString(), null);
                 }
-
-                return new SimpleRunResult<string>(true, null, finalFilename);
             }
             catch (Exception ex)
             {
                 return new SimpleRunResult<string>(false, ex.Message, null);
             }
         }
-
         // --- GET PLAYLIST ---
         public async Task<SimpleRunResult<string[]>> GetPlaylistUrlsAsync(string playlistUrl)
         {
