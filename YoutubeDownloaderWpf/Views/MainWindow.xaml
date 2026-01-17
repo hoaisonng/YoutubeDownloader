@@ -1,0 +1,181 @@
+﻿<Window x:Class="YoutubeDownloaderWpf.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:YoutubeDownloaderWpf.ViewModels"
+        mc:Ignorable="d"
+        Title="Youtube Downloader Pro" Height="650" Width="950">
+
+    <d:Window.DataContext>
+        <vm:MainViewModel/>
+    </d:Window.DataContext>
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
+
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="#FFF4E5" BorderBrush="#FFCC80" BorderThickness="1" 
+                Padding="10" Margin="0,0,0,10" CornerRadius="5"
+                Visibility="{Binding AreToolsMissing, Converter={StaticResource BoolToVis}}">
+            <StackPanel>
+                <TextBlock Text="⚠️ CẢNH BÁO: Ứng dụng thiếu các file thư viện cần thiết để chạy!" 
+                           FontWeight="Bold" Foreground="#D32F2F" Margin="0,0,0,5"/>
+                <TextBlock Text="{Binding ToolStatusMessage}" Margin="0,0,0,10"/>
+
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="Tải Tự Động (Khuyên dùng)" Command="{Binding DownloadMissingToolsCommand}" 
+                            Padding="10,5" Background="#4CAF50" Foreground="White" FontWeight="Bold" Margin="0,0,10,0"/>
+
+                    <TextBlock Text="Hoặc chọn file có sẵn:" VerticalAlignment="Center" Margin="10,0,5,0"/>
+                    <Button Content="Chọn yt-dlp.exe" Command="{Binding LocateYtDlpCommand}" Margin="5,0"/>
+                    <Button Content="Chọn ffmpeg.exe" Command="{Binding LocateFfmpegCommand}" Margin="5,0"/>
+                </StackPanel>
+
+                <ProgressBar Value="{Binding ToolDownloadProgress}" Maximum="100" Height="5" Margin="0,10,0,0" 
+                             Visibility="{Binding IsBusyWithTools, Converter={StaticResource BoolToVis}}"/>
+            </StackPanel>
+        </Border>
+
+        <GroupBox Grid.Row="1" Header="Cấu hình tải" Padding="10">
+            <!--<StackPanel>
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Text="{Binding InputUrl, UpdateSourceTrigger=PropertyChanged}" 
+                             FontSize="14" Padding="5" ToolTip="Nhập link Youtube Video hoặc Playlist"/>
+                    <Button Content="Thêm vào hàng đợi" Command="{Binding AddDownloadCommand}" 
+                            Margin="10,0,0,0" Padding="15,5" FontWeight="Bold"/>
+                </Grid>
+
+                <StackPanel Orientation="Horizontal" Margin="0,5">
+                    <CheckBox Content="Tải kèm Subtitle" IsChecked="{Binding IsDownloadingSubtitles}" 
+                              VerticalAlignment="Center" Margin="0,0,20,0"/>
+
+                    <TextBlock Text="Cookies:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                    <TextBox Text="{Binding CookieFilePath}" Width="150" IsReadOnly="True" VerticalAlignment="Center"/>
+                    <Button Content="..." Command="{Binding SelectCookieFileCommand}" Width="30" Margin="5,0,0,0"/>
+
+                    <Button Content="Cập nhật yt-dlp" Command="{Binding UpdateToolsCommand}" Margin="20,0,0,0"
+                            IsEnabled="{Binding AreToolsMissing, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}"/>
+                    <Button Content="Xóa/Hủy All" Command="{Binding CancelAllCommand}" Margin="10,0,0,0" Background="#FFEBEE"/>
+                </StackPanel>
+            --><!--</StackPanel>-->
+            <StackPanel Grid.Row="1">
+                <Grid Margin="0,0,0,5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0" Text="{Binding InputUrl}" Padding="5" ToolTip="Nhập URL video lẻ"/>
+                    <Button Grid.Column="1" Width="100" Content="Thêm Video Lẻ" Command="{Binding AddDownloadCommand}" Margin="5,0,0,0" Padding="10,5"/>
+                </Grid>
+
+                <StackPanel Orientation="Horizontal" Margin="0,5">
+                    <Button Content="📂 Tải Playlist" Command="{Binding OpenPlaylistCommand}" 
+                Padding="10,5" Margin="0,0,15,0" Background="#E3F2FD"/>
+
+                    <Button Content="🔑 Đăng nhập (Member)" Command="{Binding OpenLoginCommand}" 
+                Padding="10,5" Margin="0,0,15,0" Background="#FFF3E0"/>
+
+                    <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="3" Padding="5,0" VerticalAlignment="Center" Margin="0,0,15,0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Sub:" VerticalAlignment="Center" Margin="0,0,5,0" FontWeight="Bold"/>
+                            <CheckBox Content="Tiếng Việt" IsChecked="{Binding IsSubVi}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <CheckBox Content="English" IsChecked="{Binding IsSubEn}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!--<TextBlock Text="Cookies:" VerticalAlignment="Center"/>
+                    <TextBox Text="{Binding CookieFilePath}" Width="100" IsReadOnly="True" VerticalAlignment="Center" Margin="5,0"/>-->
+                    <Border BorderBrush="#BDBDBD" BorderThickness="1" CornerRadius="4" Padding="5,2" VerticalAlignment="Center" Background="#FAFAFA">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="🍪 Cookies:" VerticalAlignment="Center" Margin="0,0,5,0" FontWeight="SemiBold"/>
+
+                            <TextBox Text="{Binding CookieFilePath}" Width="120" IsReadOnly="True" 
+                         VerticalAlignment="Center" Margin="0,0,5,0"
+                         Background="White" BorderThickness="0" 
+                         ToolTip="{Binding CookieFilePath}" 
+                         TextAlignment="Right" Foreground="Gray" FontStyle="Italic"/>
+
+                            <Button Command="{Binding SelectCookieFileCommand}" 
+                        ToolTip="Chọn file cookies có sẵn từ máy (.txt)"
+                        Padding="8,2" Margin="0,0,2,0" Background="White" BorderBrush="Gray">
+                                <TextBlock Text="📂" FontWeight="Bold"/>
+                            </Button>
+
+                            <Button Command="{Binding ClearCookiesCommand}" 
+                        ToolTip="Xóa cookies (Chuyển về chế độ tải thường)"
+                        Padding="8,2" Background="#FFEBEE" BorderBrush="#EF9A9A">
+                                <TextBlock Text="❌" FontWeight="Bold" Foreground="#C62828"/>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Margin="0,5">
+                    <Button Content="Cập nhật yt-dlp" Command="{Binding UpdateToolsCommand}" />
+                    <Button Content="Hủy Tất Cả" Command="{Binding CancelAllCommand}" Margin="10,0,0,0" Foreground="Red"/>
+                    <Button Content="📂 Mở Thư Mục Tải" Command="{Binding OpenOutputFolderCommand}" Margin="20,0,0,0" FontWeight="Bold"/>
+                </StackPanel>
+            </StackPanel>
+        </GroupBox>
+
+        <DataGrid Grid.Row="2" ItemsSource="{Binding Downloads}" AutoGenerateColumns="False" 
+                  CanUserAddRows="False" Margin="0,10" HeadersVisibility="Column" GridLinesVisibility="Horizontal">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Video / URL" Binding="{Binding Title}" Width="300"/>
+                <DataGridTextColumn Header="Trạng thái" Binding="{Binding Status}" Width="120"/>
+                <DataGridTextColumn Header="Tốc độ" Binding="{Binding Speed}" Width="100"/>
+
+                <DataGridTemplateColumn Header="Tiến độ" Width="*">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <ProgressBar Value="{Binding Progress}" Maximum="100" Height="18"/>
+                                <TextBlock Text="{Binding Progress, StringFormat={}{0:0}%}" 
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="10"/>
+                            </Grid>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <DataGridTemplateColumn Header="Action" Width="70">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button Content="Stop" Command="{Binding DataContext.CancelItemCommand, RelativeSource={RelativeSource AncestorType=Window}}" 
+                                    CommandParameter="{Binding}" Foreground="Red"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <StatusBar Grid.Row="3" Padding="5">
+            <StatusBarItem>
+                <TextBlock Text="{Binding LogMessage}" TextTrimming="CharacterEllipsis" Width="400"/>
+            </StatusBarItem>
+
+            <StatusBarItem HorizontalAlignment="Right">
+                <Separator Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" />
+            </StatusBarItem>
+
+            <StatusBarItem HorizontalAlignment="Right">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding TotalStatusInfo}" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="Bold"/>
+                    <ProgressBar Value="{Binding TotalProgressValue}" Width="150" Height="15"/>
+                </StackPanel>
+            </StatusBarItem>
+        </StatusBar>
+    </Grid>
+</Window>
