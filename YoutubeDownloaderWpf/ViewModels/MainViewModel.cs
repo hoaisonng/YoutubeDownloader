@@ -30,6 +30,8 @@ namespace YoutubeDownloaderWpf.ViewModels
         // --- CÁC BIẾN MỚI CHO TIẾN ĐỘ TỔNG ---
         [ObservableProperty] private double totalProgressValue;
         [ObservableProperty] private string totalStatusInfo;
+        // THÊM: Biến lưu thư mục đầu ra
+        [ObservableProperty] private string outputFolderPath;
         // Danh sách hiển thị lên UI
         public ObservableCollection<DownloadItem> Downloads { get; } = new ObservableCollection<DownloadItem>();
 
@@ -37,6 +39,11 @@ namespace YoutubeDownloaderWpf.ViewModels
         {
             _youtubeService = youtubeService;
             _concurrencyLimiter = new SemaphoreSlim(4);
+
+            // Mặc định lưu vào folder Downloads cạnh file exe
+            OutputFolderPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Downloads");
+            if (!Directory.Exists(OutputFolderPath)) Directory.CreateDirectory(OutputFolderPath);
+
             _ = InitializeApp();
         }
         // Thêm hàm lấy chuỗi subLang
@@ -75,15 +82,29 @@ namespace YoutubeDownloaderWpf.ViewModels
                 LogMessage = "Sẵn sàng tải video.";
             }
         }
+        // THÊM: Lệnh thay đổi thư mục lưu
+        [RelayCommand]
+        private void ChangeOutputFolder()
+        {
+            // Trong .NET 6/8 WPF, dùng OpenFolderDialog là chuẩn nhất
+            var dialog = new Microsoft.Win32.OpenFolderDialog
+            {
+                Title = "Chọn thư mục lưu video",
+                InitialDirectory = OutputFolderPath
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                OutputFolderPath = dialog.FolderName;
+                LogMessage = $"Đã đổi thư mục lưu sang: {OutputFolderPath}";
+            }
+        }
         // Lệnh mở thư mục chứa file tải về
         [RelayCommand]
         private void OpenOutputFolder()
         {
-            string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Downloads");
-            if (!Directory.Exists(path)) Directory.CreateDirectory(path);
-
-            // Mở Explorer
-            System.Diagnostics.Process.Start("explorer.exe", path);
+            if (!Directory.Exists(OutputFolderPath)) Directory.CreateDirectory(OutputFolderPath);
+            System.Diagnostics.Process.Start("explorer.exe", OutputFolderPath);
         }
 
         // Hàm tính toán lại tiến độ tổng
@@ -291,8 +312,12 @@ namespace YoutubeDownloaderWpf.ViewModels
             {
                 if (item.Cts.IsCancellationRequested) return;
 
-                // Cập nhật trạng thái ban đầu
-                Application.Current.Dispatcher.Invoke(() => item.Status = "Starting...");
+                // BẬT cờ đang tải -> Nút Stop hiện lên
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    item.Status = "Starting...";
+                    item.IsDownloading = true;
+                });
 
                 var progressIndicator = new Progress<SimpleProgress>(p =>
                 {
@@ -305,9 +330,10 @@ namespace YoutubeDownloaderWpf.ViewModels
                     });
                 });
 
+                // TRUYỀN OutputFolderPath VÀO HÀM TẢI
                 var result = await _youtubeService.DownloadVideoAsync(
                     item.Url,
-                    "Downloads",
+                    OutputFolderPath, // <--- Đổi "Downloads" thành biến này
                     GetSubLanguages(),
                     CookieFilePath,
                     progressIndicator,
@@ -340,6 +366,9 @@ namespace YoutubeDownloaderWpf.ViewModels
             }
             finally
             {
+                // TẮT cờ đang tải -> Nút Stop ẩn đi
+                Application.Current.Dispatcher.Invoke(() => item.IsDownloading = false);
+
                 _concurrencyLimiter.Release();
                 UpdateTotalStatus();
             }

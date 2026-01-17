@@ -10,7 +10,8 @@ namespace YoutubeDownloaderWpf.Models
         [ObservableProperty] private double progress; // 0 đến 100
         [ObservableProperty] private string status;   // "Pending", "Downloading", "Completed", "Error"
         [ObservableProperty] private string speed;
-
+        // Thêm thuộc tính này để điều khiển hiển thị nút Stop
+        [ObservableProperty] private bool isDownloading;
         public CancellationTokenSource Cts { get; set; } = new CancellationTokenSource();
     }
 }

@@ -1,21 +1,42 @@
-﻿<Window x:Class="YoutubeDownloaderWpf.Views.LoginWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
-        Title="Đăng nhập Youtube (Để tải video Member)" Height="600" Width="800" WindowStartupLocation="CenterScreen">
+﻿<Window
+    x:Class="YoutubeDownloaderWpf.Views.LoginWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+    Title="Đăng nhập Youtube (Để tải video Member)"
+    Width="800"
+    Height="600"
+    WindowStartupLocation="CenterScreen">
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Border Background="#FFF8E1" Padding="10" BorderBrush="#FFB74D" BorderThickness="0,0,0,1">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <TextBlock Text="Sau khi đăng nhập thành công, hãy bấm nút này -> " VerticalAlignment="Center" FontWeight="Bold"/>
-                <Button Content="LƯU COOKIES &amp; ĐÓNG" Click="SaveCookies_Click" Padding="15,5" Background="#4CAF50" Foreground="White" FontWeight="Bold" Margin="5,0,0,0"/>
+        <Border
+            Padding="10"
+            Background="#FFF8E1"
+            BorderBrush="#FFB74D"
+            BorderThickness="0,0,0,1">
+            <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                <TextBlock
+                    VerticalAlignment="Center"
+                    FontWeight="Bold"
+                    Text="Sau khi đăng nhập thành công, hãy bấm nút này -&gt; " />
+                <Button
+                    Margin="5,0,0,0"
+                    Padding="15,5"
+                    Background="#4CAF50"
+                    Click="SaveCookies_Click"
+                    Content="LƯU COOKIES &amp; ĐÓNG"
+                    FontWeight="Bold"
+                    Foreground="White" />
             </StackPanel>
         </Border>
 
-        <wv2:WebView2 Name="webView" Grid.Row="1" Source="https://accounts.google.com/ServiceLogin?service=youtube"/>
+        <wv2:WebView2
+            Name="webView"
+            Grid.Row="1"
+            Source="https://accounts.google.com/ServiceLogin?service=youtube" />
     </Grid>
 </Window>
