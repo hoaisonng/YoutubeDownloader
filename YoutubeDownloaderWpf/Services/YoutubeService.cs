@@ -54,23 +54,29 @@ namespace YoutubeDownloaderWpf.Services
         {
             var argsBuilder = new StringBuilder();
 
+            // Cấu hình output và format
             string outputTemplate = Path.Combine(outputFolder, "%(title)s.%(ext)s");
-            argsBuilder.Append($" -o \"{outputTemplate}\"");
+            // Thêm encoding utf8 để tránh lỗi hiển thị tên file tiếng Việt
+            argsBuilder.Append($" --encoding utf8 -o \"{outputTemplate}\"");
             argsBuilder.Append(" -f \"bestvideo+bestaudio/best\" --merge-output-format mp4");
-            argsBuilder.Append(" --no-check-certificate --ignore-errors"); // Thêm ignore-errors để tránh crash
+            argsBuilder.Append(" --no-check-certificate --ignore-errors --no-mtime");
 
+            // Subtitle
             if (!string.IsNullOrEmpty(subLangs))
             {
                 argsBuilder.Append($" --write-sub --write-auto-sub --sub-lang \"{subLangs}\"");
             }
 
+            // Cookies
             if (!string.IsNullOrEmpty(cookiePath) && File.Exists(cookiePath))
             {
                 argsBuilder.Append($" --cookies \"{cookiePath}\"");
             }
 
+            // URL
             argsBuilder.Append($" \"{url}\"");
 
+            // Regex bắt tiến độ
             var progressRegex = new Regex(@"\[download\]\s+(\d+\.?\d*)%");
             var speedRegex = new Regex(@"at\s+(\S+)");
 
@@ -79,33 +85,42 @@ namespace YoutubeDownloaderWpf.Services
 
             try
             {
-                // SỬA: Lấy exitCode thay vì để nó throw Exception
                 int exitCode = await RunProcessAsync(YtDlpPath, argsBuilder.ToString(), ct, (line) =>
                 {
                     if (string.IsNullOrWhiteSpace(line)) return;
+
+                    // Log dòng raw để debug (nếu cần xem nó đang chạy gì)
+                    Debug.WriteLine($"[YTDLP]: {line}");
+
+                    // Lấy tên file
                     if (line.Contains("[Merger] Merging formats into") || line.Contains("Destination:"))
                     {
                         var parts = line.Split('"');
                         if (parts.Length > 1) finalFilename = parts[1];
-                        // Fallback nếu không có dấu ngoặc kép (trường hợp Destination: path)
                         else if (line.Contains("Destination: ")) finalFilename = line.Replace("Destination: ", "").Trim();
                     }
 
+                    // Parse tiến độ
                     var match = progressRegex.Match(line);
                     if (match.Success && progress != null)
                     {
-                        if (double.TryParse(match.Groups[1].Value, out double p))
+                        if (double.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double p))
                         {
                             string speed = "N/A";
                             var speedMatch = speedRegex.Match(line);
                             if (speedMatch.Success) speed = speedMatch.Groups[1].Value;
+
+                            // Report về UI
                             progress.Report(new SimpleProgress { Progress = p / 100.0, DownloadSpeed = speed });
                         }
                     }
                 },
-                (errLine) => errorLog.AppendLine(errLine));
+                (errLine) =>
+                {
+                    Debug.WriteLine($"[ERROR]: {errLine}");
+                    errorLog.AppendLine(errLine);
+                });
 
-                // Nếu exitCode != 0 nghĩa là có lỗi
                 if (exitCode != 0 && string.IsNullOrEmpty(finalFilename))
                 {
                     return new SimpleRunResult<string>(false, $"Lỗi (Code {exitCode}): " + errorLog.ToString(), null);
@@ -122,12 +137,7 @@ namespace YoutubeDownloaderWpf.Services
         // --- GET PLAYLIST ---
         public async Task<SimpleRunResult<string[]>> GetPlaylistUrlsAsync(string playlistUrl)
         {
-            // CẬP NHẬT ARGUMENTS QUAN TRỌNG:
-            // --ignore-errors: Bỏ qua video lỗi, tiếp tục lấy các video khác
-            // --flat-playlist: Chỉ lấy thông tin cơ bản (nhanh)
-            // --print url: Chỉ in ra URL
             string args = $"--flat-playlist --print url --no-check-certificate --ignore-errors \"{playlistUrl}\"";
-
             var urls = new List<string>();
             var errorLog = new StringBuilder();
 
@@ -136,17 +146,14 @@ namespace YoutubeDownloaderWpf.Services
                 int exitCode = await RunProcessAsync(YtDlpPath, args, CancellationToken.None,
                     (line) =>
                     {
-                        // Chỉ lấy các dòng là URL (bắt đầu bằng http)
                         if (!string.IsNullOrWhiteSpace(line) && line.Trim().StartsWith("http"))
                             urls.Add(line.Trim());
                     },
                     (err) => errorLog.AppendLine(err));
 
-                // Nếu danh sách rỗng VÀ có lỗi exit code -> Báo lỗi
-                // Nếu danh sách có dữ liệu nhưng exit code lỗi (do 1 vài video bị ẩn) -> Vẫn coi là thành công
                 if (urls.Count == 0 && exitCode != 0)
                 {
-                    return new SimpleRunResult<string[]>(false, "Không lấy được video nào.\nChi tiết lỗi:\n" + errorLog.ToString(), new string[0]);
+                    return new SimpleRunResult<string[]>(false, "Không lấy được video nào.\n" + errorLog.ToString(), new string[0]);
                 }
 
                 return new SimpleRunResult<string[]>(true, null, urls.ToArray());
@@ -157,10 +164,11 @@ namespace YoutubeDownloaderWpf.Services
             }
         }
 
-        // --- CORE PROCESS RUNNER (SỬA ĐỔI QUAN TRỌNG) ---
-        // Sửa: Trả về int (ExitCode) thay vì void, và KHÔNG throw exception khi lỗi
+        // --- HÀM CHẠY PROCESS CHUẨN (FIX TREO UI) ---
         private async Task<int> RunProcessAsync(string fileName, string arguments, CancellationToken ct, Action<string> onOutput, Action<string> onError)
         {
+            var tcs = new TaskCompletionSource<int>();
+
             var psi = new ProcessStartInfo
             {
                 FileName = fileName,
@@ -169,37 +177,34 @@ namespace YoutubeDownloaderWpf.Services
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
-                StandardOutputEncoding = Encoding.UTF8,
+                StandardOutputEncoding = Encoding.UTF8, // Đọc tiếng Việt
                 StandardErrorEncoding = Encoding.UTF8
             };
 
-            using (var process = new Process { StartInfo = psi })
+            var process = new Process { StartInfo = psi };
+            process.EnableRaisingEvents = true;
+
+            // Xử lý sự kiện Output (Không chặn luồng)
+            process.OutputDataReceived += (s, e) => { if (e.Data != null) onOutput(e.Data); };
+            process.ErrorDataReceived += (s, e) => { if (e.Data != null) onError(e.Data); };
+
+            process.Exited += (s, e) => tcs.TrySetResult(process.ExitCode);
+
+            using (ct.Register(() => {
+                tcs.TrySetCanceled();
+                try { if (!process.HasExited) process.Kill(); } catch { }
+            }))
             {
-                process.Start();
+                if (!process.Start()) throw new Exception("Không thể khởi động process.");
 
-                using (ct.Register(() => { try { process.Kill(); } catch { } }))
-                {
-                    var outputTask = ReadStreamAsync(process.StandardOutput, onOutput);
-                    var errorTask = ReadStreamAsync(process.StandardError, onError);
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
 
-                    await process.WaitForExitAsync(ct);
-                    await Task.WhenAll(outputTask, errorTask);
-                }
-
-                return process.ExitCode; // Trả về mã thoát để hàm gọi tự xử lý
+                return await tcs.Task;
             }
         }
 
-        private async Task ReadStreamAsync(StreamReader reader, Action<string> callback)
-        {
-            while (!reader.EndOfStream)
-            {
-                var line = await reader.ReadLineAsync();
-                if (line != null) callback(line);
-            }
-        }
-
-        // --- DOWNLOAD TOOLS (GIỮ NGUYÊN) ---
+        // --- DOWNLOAD TOOLS (Giữ nguyên) ---
         public async Task DownloadYtDlpAsync(IProgress<double> progress)
         {
             await DownloadFileAsync(YtDlpUrl, "yt-dlp.exe", progress);

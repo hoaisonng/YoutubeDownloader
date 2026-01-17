@@ -230,32 +230,49 @@ namespace YoutubeDownloaderWpf.ViewModels
             catch (Exception ex) { LogMessage = $"Lỗi update: {ex.Message}"; }
         }
 
+        // Sửa hàm AddDownload
         [RelayCommand]
         private async Task AddDownload()
         {
-            // Kiểm tra tool trước khi tải
             if (AreToolsMissing)
             {
                 MessageBox.Show("Vui lòng tải hoặc chọn công cụ (yt-dlp/ffmpeg) trước.", "Thiếu Tool");
                 return;
             }
             if (string.IsNullOrWhiteSpace(InputUrl)) return;
-            string urlToAdd = InputUrl; InputUrl = "";
+
+            string urlToAdd = InputUrl;
+            InputUrl = "";
 
             if (urlToAdd.Contains("playlist?list="))
             {
-                LogMessage = "Đang lấy playlist...";
-                try
+                LogMessage = "Đang lấy danh sách playlist (vui lòng đợi)...";
+                // Chạy task lấy playlist ở background để không đơ UI lúc chờ
+                await Task.Run(async () =>
                 {
                     var result = await _youtubeService.GetPlaylistUrlsAsync(urlToAdd);
-                    if (result.Success) foreach (var u in result.Data) QueueVideo(u);
-                    else LogMessage = "Không đọc được playlist.";
-                }
-                catch (Exception ex) { LogMessage = ex.Message; }
+
+                    // Cập nhật UI phải qua Dispatcher
+                    Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        if (result.Success)
+                        {
+                            foreach (var u in result.Data) QueueVideo(u);
+                            LogMessage = $"Đã thêm {result.Data.Length} video.";
+                        }
+                        else
+                        {
+                            LogMessage = result.ErrorOutput;
+                        }
+                        UpdateTotalStatus();
+                    });
+                });
             }
-            else QueueVideo(urlToAdd);
-            // ---> THÊM DÒNG NÀY ĐỂ CẬP NHẬT THANH TỔNG <---
-            UpdateTotalStatus();
+            else
+            {
+                QueueVideo(urlToAdd);
+                UpdateTotalStatus();
+            }
         }
 
         private void QueueVideo(string url)
@@ -265,6 +282,7 @@ namespace YoutubeDownloaderWpf.ViewModels
             _ = ProcessDownloadQueue(item);
         }
 
+        // Sửa hàm ProcessDownloadQueue
         private async Task ProcessDownloadQueue(DownloadItem item)
         {
             await _concurrencyLimiter.WaitAsync(item.Cts.Token);
@@ -273,17 +291,20 @@ namespace YoutubeDownloaderWpf.ViewModels
             {
                 if (item.Cts.IsCancellationRequested) return;
 
-                item.Status = "Downloading";
+                // Cập nhật trạng thái ban đầu
+                Application.Current.Dispatcher.Invoke(() => item.Status = "Starting...");
 
-                // SỬA: Dùng SimpleProgress thay vì DownloadProgress của thư viện
                 var progressIndicator = new Progress<SimpleProgress>(p =>
                 {
-                    item.Progress = p.Progress * 100;
-                    item.Speed = p.DownloadSpeed;
-                    item.Status = $"Downloading {item.Progress:0.#}%";
+                    // Đảm bảo update UI mượt mà
+                    Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        item.Progress = p.Progress * 100;
+                        item.Speed = p.DownloadSpeed;
+                        item.Status = $"Downloading {item.Progress:0}%";
+                    });
                 });
 
-                // Gọi Service (đã viết lại)
                 var result = await _youtubeService.DownloadVideoAsync(
                     item.Url,
                     "Downloads",
@@ -293,35 +314,33 @@ namespace YoutubeDownloaderWpf.ViewModels
                     item.Cts.Token
                 );
 
-                if (result.Success)
+                Application.Current.Dispatcher.Invoke(() =>
                 {
-                    item.Status = "Completed";
-                    item.Progress = 100;
-                    // Nếu yt-dlp trả về đường dẫn file, lấy tên file hiển thị
-                    if (!string.IsNullOrEmpty(result.Data))
-                        item.Title = Path.GetFileName(result.Data);
+                    if (result.Success)
+                    {
+                        item.Status = "Completed";
+                        item.Progress = 100;
+                        if (!string.IsNullOrEmpty(result.Data))
+                            item.Title = Path.GetFileName(result.Data);
+                    }
                     else
-                        item.Title = "Download Completed";
-                }
-                else
-                {
-                    item.Status = item.Cts.IsCancellationRequested ? "Cancelled" : "Error";
-                    LogMessage = result.ErrorOutput; // Hiển thị lỗi từ Process
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                item.Status = "Cancelled";
+                    {
+                        item.Status = item.Cts.IsCancellationRequested ? "Cancelled" : "Error";
+                        LogMessage = "Lỗi: " + result.ErrorOutput;
+                    }
+                });
             }
             catch (Exception ex)
             {
-                item.Status = "Error";
-                LogMessage = ex.Message;
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    item.Status = "Error";
+                    LogMessage = ex.Message;
+                });
             }
             finally
             {
                 _concurrencyLimiter.Release();
-                // ---> THÊM DÒNG NÀY ĐỂ CẬP NHẬT THANH TỔNG <---
                 UpdateTotalStatus();
             }
         }
