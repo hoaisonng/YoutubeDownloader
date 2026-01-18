@@ -3,13 +3,14 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
+using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.Json; // Cần dùng thư viện này (có sẵn trong .NET)
 using YoutubeDownloaderWpf.Models;
-// Newtonsoft.Json không cần thiết nếu parse thủ công đơn giản
 
 namespace YoutubeDownloaderWpf.Services
 {
@@ -36,6 +37,12 @@ namespace YoutubeDownloaderWpf.Services
 
     public class YoutubeService : IYoutubeService
     {
+        // =================================================================================
+        // [CẤU HÌNH AI] Dán API Key Gemini của bạn vào giữa 2 dấu ngoặc kép bên dưới
+        // Lấy key tại: https://aistudio.google.com/app/apikey
+        private const string GeminiApiKey = "AIzaSyBLe7bNfv-5Watv9DfOKAoofvyGgpqB0EE";
+        // =================================================================================
+
         private const string YtDlpUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
         private const string FfmpegUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip";
         private const string DenoUrl = "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip";
@@ -53,54 +60,109 @@ namespace YoutubeDownloaderWpf.Services
         public YoutubeService()
         {
             _httpClient = new HttpClient();
-            // Giả lập User-Agent của Chrome Extension để có kết quả tốt nhất
-            _httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
+            _httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124 Safari/537.36");
         }
 
-        // --- HÀM DỊCH THUẬT MỚI (DÙNG API CLIENTS5) ---
-        // API này thường cho kết quả tự nhiên hơn (Neural Translation)
+        // --- HÀM ĐIỀU PHỐI DỊCH THUẬT ---
         public async Task<string> TranslateToEnglishAsync(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) return text;
             text = text.Trim();
 
+            // 1. Ưu tiên dùng AI (Gemini) nếu có Key
+            if (!string.IsNullOrEmpty(GeminiApiKey))
+            {
+                string aiResult = await TranslateWithGeminiAI(text);
+                if (!string.IsNullOrEmpty(aiResult)) return aiResult;
+            }
+
+            // 2. Nếu không có Key hoặc lỗi, dùng Google Translate "thông minh" (Có ngữ cảnh)
+            return await TranslateWithGoogleContext(text);
+        }
+
+        // --- CÁCH 1: DÙNG AI GEMINI (CHUẨN NHẤT) ---
+        private async Task<string> TranslateWithGeminiAI(string text)
+        {
             try
             {
-                // Sử dụng endpoint clients5 (dùng cho Extension) thay vì translate_a/single
-                // Endpoint này trả về mảng JSON đơn giản hơn: ["Translated Text"]
-                string url = $"https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=en&q={Uri.EscapeDataString(text)}";
+                string url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GeminiApiKey}";
+
+                // Câu lệnh Prompt cực kỹ cho AI
+                var prompt = $"You are a professional badminton translator. Translate the following video title to English. Use specific badminton terminology (e.g., 'hitting point' instead of 'RBI'). Only output the translation, no explanation. Text: {text}";
+
+                var payload = new
+                {
+                    contents = new[]
+                    {
+                        new { parts = new[] { new { text = prompt } } }
+                    }
+                };
+
+                string jsonContent = JsonSerializer.Serialize(payload);
+                var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.PostAsync(url, content);
+                if (!response.IsSuccessStatusCode) return null;
+
+                string responseString = await response.Content.ReadAsStringAsync();
+
+                // Parse JSON trả về từ Gemini
+                using (JsonDocument doc = JsonDocument.Parse(responseString))
+                {
+                    // Cấu trúc: candidates[0].content.parts[0].text
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("candidates", out var candidates) && candidates.GetArrayLength() > 0)
+                    {
+                        var parts = candidates[0].GetProperty("content").GetProperty("parts");
+                        if (parts.GetArrayLength() > 0)
+                        {
+                            return parts[0].GetProperty("text").GetString().Trim();
+                        }
+                    }
+                }
+                return null;
+            }
+            catch { return null; }
+        }
+
+        // --- CÁCH 2: DÙNG GOOGLE TRANSLATE VỚI NGỮ CẢNH (MIỄN PHÍ) ---
+        private async Task<string> TranslateWithGoogleContext(string text)
+        {
+            try
+            {
+                // MẸO: Thêm chữ "Badminton: " vào trước để ép Google hiểu ngữ cảnh
+                // Ví dụ: "Badminton: 낮은 타점 연습" -> Google sẽ dịch đúng là Hitting point thay vì RBI
+                string query = "Badminton: " + text;
+
+                string url = $"https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=en&q={Uri.EscapeDataString(query)}";
 
                 var response = await _httpClient.GetAsync(url);
-                response.EnsureSuccessStatusCode();
-
                 string json = await response.Content.ReadAsStringAsync();
 
-                // API này trả về dạng: ["Translated Text"] hoặc [["Translated Text"]]
-                // Chúng ta lọc bỏ ngoặc vuông và ngoặc kép để lấy nội dung
+                string translated = text;
+
+                // Parse kết quả clients5
                 if (!string.IsNullOrEmpty(json))
                 {
-                    // Cách parse "lười" nhưng hiệu quả: 
-                    // 1. Nếu response là ["..."]
                     if (json.StartsWith("[\"") && json.EndsWith("\"]"))
+                        translated = Regex.Unescape(json.Substring(2, json.Length - 4));
+                    else
                     {
-                        string result = json.Substring(2, json.Length - 4);
-                        // Fix ký tự xuống dòng hoặc unicode escape nếu có
-                        return Regex.Unescape(result);
-                    }
-                    // 2. Nếu response phức tạp hơn, dùng Regex lấy nội dung trong ngoặc kép đầu tiên
-                    var match = Regex.Match(json, "\"([^\"]+)\"");
-                    if (match.Success)
-                    {
-                        return Regex.Unescape(match.Groups[1].Value);
+                        var match = Regex.Match(json, "\"([^\"]+)\"");
+                        if (match.Success) translated = Regex.Unescape(match.Groups[1].Value);
                     }
                 }
 
-                return text;
+                // Xóa bỏ chữ "Badminton: " hoặc "Badminton" ở đầu kết quả
+                // Vd: "Badminton: Low hitting point practice" -> "Low hitting point practice"
+                translated = Regex.Replace(translated, @"^Badminton[:\s-]*", "", RegexOptions.IgnoreCase).Trim();
+
+                // Fix cứng một số lỗi nếu Google vẫn sai
+                translated = translated.Replace("RBI", "hitting point", StringComparison.OrdinalIgnoreCase);
+
+                return translated;
             }
-            catch
-            {
-                return text;
-            }
+            catch { return text; }
         }
 
         private string SanitizeFileName(string name)
@@ -119,8 +181,7 @@ namespace YoutubeDownloaderWpf.Services
 
         public async Task UpdateToolsAsync()
         {
-            if (IsYtDlpReady)
-                await RunProcessAsync(YtDlpPath, "--update-to nightly", CancellationToken.None, s => { }, e => { });
+            if (IsYtDlpReady) await RunProcessAsync(YtDlpPath, "--update-to nightly", CancellationToken.None, s => { }, e => { });
         }
 
         public async Task<SimpleRunResult<DownloadItem>> GetVideoMetadataAsync(string url, string cookiePath)
@@ -132,11 +193,8 @@ namespace YoutubeDownloaderWpf.Services
             {
                 args += $" --cookies \"{cookiePath}\"";
                 string uaPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "user-agent.txt");
-                if (File.Exists(uaPath))
-                {
-                    string ua = File.ReadAllText(uaPath).Trim();
-                    if (!string.IsNullOrEmpty(ua)) args += $" --user-agent \"{ua}\"";
-                }
+                if (File.Exists(uaPath) && !string.IsNullOrEmpty(File.ReadAllText(uaPath)))
+                    args += $" --user-agent \"{File.ReadAllText(uaPath).Trim()}\"";
             }
 
             var jsonOutput = new StringBuilder();
@@ -154,6 +212,7 @@ namespace YoutubeDownloaderWpf.Services
                 string thumb = Regex.Match(json, "\"thumbnail\":\\s*\"(.*?)\"").Groups[1].Value;
                 string durationStr = Regex.Match(json, "\"duration\":\\s*(\\d+)").Groups[1].Value;
 
+                // Parse duration
                 string durationDisplay = "00:00";
                 if (int.TryParse(durationStr, out int seconds))
                 {
@@ -182,23 +241,18 @@ namespace YoutubeDownloaderWpf.Services
 
             string fileNameTemplate = string.IsNullOrEmpty(customFileName) ? "%(title)s" : SanitizeFileName(customFileName);
             string outputTemplate = Path.Combine(outputFolder, $"{fileNameTemplate}.%(ext)s");
-
             argsBuilder.Append($" --encoding utf8 --newline -o \"{outputTemplate}\"");
 
             string uaPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "user-agent.txt");
-            if (File.Exists(uaPath))
-            {
-                string ua = File.ReadAllText(uaPath).Trim();
-                if (!string.IsNullOrEmpty(ua)) argsBuilder.Append($" --user-agent \"{ua}\"");
-            }
+            if (File.Exists(uaPath) && !string.IsNullOrEmpty(File.ReadAllText(uaPath)))
+                argsBuilder.Append($" --user-agent \"{File.ReadAllText(uaPath).Trim()}\"");
 
             if (isAudioOnly)
                 argsBuilder.Append(" -f \"bestaudio/best\" --extract-audio --audio-format mp3 --audio-quality 192K");
             else
                 argsBuilder.Append(" -f \"bestvideo[height<=1080]+bestaudio/best[height<=1080]/best\" --merge-output-format mp4");
 
-            argsBuilder.Append(" --embed-thumbnail --add-metadata");
-            argsBuilder.Append(" --no-check-certificate --ignore-errors --no-mtime");
+            argsBuilder.Append(" --embed-thumbnail --add-metadata --no-check-certificate --ignore-errors --no-mtime");
 
             if (File.Exists(FfmpegPath)) argsBuilder.Append($" --ffmpeg-location \"{FfmpegPath}\"");
             if (!string.IsNullOrEmpty(subLangs)) argsBuilder.Append($" --write-sub --write-auto-sub --sub-lang \"{subLangs}\" --embed-subs");
@@ -216,9 +270,7 @@ namespace YoutubeDownloaderWpf.Services
                 {
                     if (string.IsNullOrWhiteSpace(line)) return;
                     if (line.Contains("Destination:") && !line.Contains(".part"))
-                    {
                         finalFilename = line.Replace("Destination: ", "").Trim();
-                    }
                     else if (line.Contains("has already been downloaded"))
                     {
                         var matchFile = Regex.Match(line, @"\[download\]\s+(.*?)\s+has already been downloaded");
@@ -227,11 +279,8 @@ namespace YoutubeDownloaderWpf.Services
                     }
 
                     var match = progressRegex.Match(line);
-                    if (match.Success && progress != null)
-                    {
-                        if (double.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double p))
-                            progress.Report(new SimpleProgress { Progress = p / 100.0, DownloadSpeed = "Downloading..." });
-                    }
+                    if (match.Success && progress != null && double.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double p))
+                        progress.Report(new SimpleProgress { Progress = p / 100.0, DownloadSpeed = "Downloading..." });
                 }, (errLine) => errorLog.AppendLine(errLine));
 
                 if (exitCode != 0 || (string.IsNullOrEmpty(finalFilename) && errorLog.Length > 0))
@@ -293,14 +342,7 @@ namespace YoutubeDownloaderWpf.Services
             await DownloadFileAsync(DenoUrl, zipPath, progress);
             using (ZipArchive archive = ZipFile.OpenRead(zipPath))
             {
-                foreach (ZipArchiveEntry entry in archive.Entries)
-                {
-                    if (entry.FullName.EndsWith("deno.exe", StringComparison.OrdinalIgnoreCase))
-                    {
-                        entry.ExtractToFile("deno.exe", true);
-                        break;
-                    }
-                }
+                foreach (ZipArchiveEntry entry in archive.Entries) { if (entry.FullName.EndsWith("deno.exe", StringComparison.OrdinalIgnoreCase)) { entry.ExtractToFile("deno.exe", true); break; } }
             }
             if (File.Exists(zipPath)) File.Delete(zipPath);
         }
@@ -310,14 +352,7 @@ namespace YoutubeDownloaderWpf.Services
             await DownloadFileAsync(FfmpegUrl, zipPath, progress);
             using (ZipArchive archive = ZipFile.OpenRead(zipPath))
             {
-                foreach (ZipArchiveEntry entry in archive.Entries)
-                {
-                    if (entry.FullName.EndsWith("ffmpeg.exe", StringComparison.OrdinalIgnoreCase))
-                    {
-                        entry.ExtractToFile("ffmpeg.exe", true);
-                        break;
-                    }
-                }
+                foreach (ZipArchiveEntry entry in archive.Entries) { if (entry.FullName.EndsWith("ffmpeg.exe", StringComparison.OrdinalIgnoreCase)) { entry.ExtractToFile("ffmpeg.exe", true); break; } }
             }
             if (File.Exists(zipPath)) File.Delete(zipPath);
         }
