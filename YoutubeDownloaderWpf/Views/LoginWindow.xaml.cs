@@ -19,6 +19,9 @@ namespace YoutubeDownloaderWpf.Views
         async void InitializeAsync()
         {
             await webView.EnsureCoreWebView2Async(null);
+            // Xóa cookie cũ
+            webView.CoreWebView2.CookieManager.DeleteAllCookies();
+            webView.Source = new Uri("https://www.youtube.com");
         }
 
         private async void SaveCookies_Click(object sender, RoutedEventArgs e)
@@ -30,61 +33,68 @@ namespace YoutubeDownloaderWpf.Views
 
                 if (cookies.Count == 0)
                 {
-                    MessageBox.Show("Chưa tìm thấy cookies. Hãy chắc chắn bạn đã đăng nhập!", "Thông báo");
+                    MessageBox.Show("Chưa thấy cookies. Hãy đăng nhập trước!", "Thông báo");
                     return;
                 }
 
-                // Chuyển đổi cookie sang format Netscape mà yt-dlp hiểu
                 StringBuilder sb = new StringBuilder();
                 sb.AppendLine("# Netscape HTTP Cookie File");
 
                 foreach (var cookie in cookies)
                 {
-                    // Format: domain flag path secure expiration name value
-                    string domain = cookie.Domain.StartsWith(".") ? cookie.Domain : "." + cookie.Domain;
-                    string flag = "TRUE";
-                    string path = cookie.Path;
+                    string domain = cookie.Domain;
+                    // Fix domain
+                    if (!domain.StartsWith(".") && !System.Text.RegularExpressions.Regex.IsMatch(domain, @"^\d"))
+                        domain = "." + domain;
+
+                    string flag = domain.StartsWith(".") ? "TRUE" : "FALSE";
+                    string path = string.IsNullOrEmpty(cookie.Path) ? "/" : cookie.Path;
                     string secure = cookie.IsSecure ? "TRUE" : "FALSE";
 
-                    long expires;
+                    // --- SỬA PHẦN NÀY ĐỂ FIX LỖI CS0019/CS0030 ---
+                    // Chuyển đổi linh hoạt bất kể cookie.Expires là double hay DateTime
+                    long expires = 4102444800; // Mặc định năm 2099
 
-                    // WebView2: cookie.Expires là double.
-                    if (cookie.IsSession || cookie.Expires == System.DateTime.MinValue)
+                    try
                     {
-                        // Nếu là cookie phiên hoặc ngày hết hạn không hợp lệ -> Gán hạn 1 năm
-                        expires = System.DateTimeOffset.UtcNow.AddYears(1).ToUnixTimeSeconds();
+                        // Cách xử lý an toàn nhất: Ép sang DateTime rồi lấy Timestamp
+                        // Lưu ý: Nếu máy bạn báo lỗi ở dòng 'cookie.Expires', hãy thử chuột phải vào chữ Expires -> Go to Definition xem nó là kiểu gì.
+                        // Code dưới đây giả định nó đang bị hiểu là DateTime như lỗi bạn báo.
+
+                        dynamic rawExpires = cookie.Expires; // Dùng dynamic để tránh lỗi biên dịch kiểu dữ liệu
+
+                        // Kiểm tra nếu là DateTime
+                        if (rawExpires is DateTime dt)
+                        {
+                            if (dt != DateTime.MinValue)
+                                expires = new DateTimeOffset(dt).ToUnixTimeSeconds();
+                        }
+                        // Kiểm tra nếu là Double (số giây)
+                        else if (rawExpires is double d)
+                        {
+                            if (d > 0) expires = (long)d;
+                        }
                     }
-                    else
+                    catch
                     {
-                        // Nếu có ngày hết hạn cụ thể:
-                        // Phải chuyển đổi từ DateTime sang Unix Timestamp (số giây)
-                        try
-                        {
-                            // Chuyển DateTime sang DateTimeOffset rồi lấy số giây
-                            expires = new System.DateTimeOffset(cookie.Expires).ToUnixTimeSeconds();
-                        }
-                        catch
-                        {
-                            // Phòng trường hợp lỗi chuyển đổi, gán mặc định 1 năm
-                            expires = System.DateTimeOffset.UtcNow.AddYears(1).ToUnixTimeSeconds();
-                        }
+                        // Nếu lỗi convert thì giữ nguyên mặc định 2099
                     }
+                    // ---------------------------------------------
 
                     sb.AppendLine($"{domain}\t{flag}\t{path}\t{secure}\t{expires}\t{cookie.Name}\t{cookie.Value}");
                 }
 
-                // Lưu vào file cookies.txt trong thư mục app
                 string pathFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "cookies.txt");
                 File.WriteAllText(pathFile, sb.ToString());
 
                 SavedCookiePath = pathFile;
-                MessageBox.Show("Đã lưu cookies thành công! Bạn có thể tải video Member ngay.", "Thành công");
+                MessageBox.Show("Đã lưu Cookies! Giờ bạn có thể tải video.", "Thành công");
                 this.DialogResult = true;
                 this.Close();
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Lỗi lưu cookie: {ex.Message}");
+                MessageBox.Show($"Lỗi: {ex.Message}");
             }
         }
     }

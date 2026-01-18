@@ -24,8 +24,12 @@ namespace YoutubeDownloaderWpf.Services
         Task DownloadYtDlpAsync(IProgress<double> progress);
         Task DownloadFfmpegAsync(IProgress<double> progress);
 
-        Task<SimpleRunResult<string>> DownloadVideoAsync(string url, string outputFolder, string subLangs, string cookiePath, IProgress<SimpleProgress> progress, CancellationToken ct);
+        // Đã thêm tham số isAudioOnly
+        Task<SimpleRunResult<string>> DownloadVideoAsync(string url, string outputFolder, string subLangs, string cookiePath, bool isAudioOnly, IProgress<SimpleProgress> progress, CancellationToken ct);
         Task<SimpleRunResult<string[]>> GetPlaylistUrlsAsync(string playlistUrl);
+
+        // Hàm mới: Lấy thông tin video
+        Task<SimpleRunResult<DownloadItem>> GetVideoMetadataAsync(string url, string cookiePath);
     }
 
     public class YoutubeService : IYoutubeService
@@ -42,6 +46,7 @@ namespace YoutubeDownloaderWpf.Services
         public async Task InitializeAsync()
         {
             if (!Directory.Exists("Downloads")) Directory.CreateDirectory("Downloads");
+            await Task.CompletedTask;
         }
 
         public async Task UpdateToolsAsync()
@@ -49,46 +54,106 @@ namespace YoutubeDownloaderWpf.Services
             if (IsYtDlpReady) await RunProcessAsync(YtDlpPath, "-U", CancellationToken.None, s => { }, e => { });
         }
 
-        // --- DOWNLOAD VIDEO ---
-        public async Task<SimpleRunResult<string>> DownloadVideoAsync(string url, string outputFolder, string subLangs, string cookiePath, IProgress<SimpleProgress> progress, CancellationToken ct)
+        // --- HÀM MỚI: LẤY THÔNG TIN VIDEO ---
+        public async Task<SimpleRunResult<DownloadItem>> GetVideoMetadataAsync(string url, string cookiePath)
+        {
+            // --dump-json: Lấy dữ liệu dạng JSON thay vì tải về
+            var args = $"--dump-json --no-playlist --ignore-errors \"{url}\"";
+            if (!string.IsNullOrEmpty(cookiePath) && File.Exists(cookiePath))
+            {
+                args += $" --cookies \"{cookiePath}\"";
+            }
+
+            var jsonOutput = new StringBuilder();
+            try
+            {
+                await RunProcessAsync(YtDlpPath, args, CancellationToken.None,
+                    line => jsonOutput.AppendLine(line), _ => { });
+
+                string json = jsonOutput.ToString();
+                if (string.IsNullOrWhiteSpace(json))
+                    return new SimpleRunResult<DownloadItem>(false, "Không lấy được thông tin video.", null);
+
+                // Dùng Regex để tách thông tin từ chuỗi JSON (đơn giản, không cần thư viện JSON)
+                string title = Regex.Match(json, "\"title\":\\s*\"(.*?)\"").Groups[1].Value;
+                string thumb = Regex.Match(json, "\"thumbnail\":\\s*\"(.*?)\"").Groups[1].Value;
+                string durationStr = Regex.Match(json, "\"duration\":\\s*(\\d+)").Groups[1].Value; // Giây
+
+                // Chuyển giây sang format mm:ss
+                string durationDisplay = "00:00";
+                if (int.TryParse(durationStr, out int seconds))
+                {
+                    TimeSpan t = TimeSpan.FromSeconds(seconds);
+                    durationDisplay = t.ToString(t.TotalHours >= 1 ? @"hh\:mm\:ss" : @"mm\:ss");
+                }
+
+                var item = new DownloadItem
+                {
+                    Url = url,
+                    Title = string.IsNullOrEmpty(title) ? "Video không tên" : title,
+                    ThumbnailUrl = thumb,
+                    Duration = durationDisplay,
+                    Progress = 0,
+                    Status = "Ready"
+                };
+
+                return new SimpleRunResult<DownloadItem>(true, null, item);
+            }
+            catch (Exception ex)
+            {
+                return new SimpleRunResult<DownloadItem>(false, ex.Message, null);
+            }
+        }
+
+        // --- HÀM TẢI VIDEO ---
+        public async Task<SimpleRunResult<string>> DownloadVideoAsync(string url, string outputFolder, string subLangs, string cookiePath, bool isAudioOnly, IProgress<SimpleProgress> progress, CancellationToken ct)
         {
             var argsBuilder = new StringBuilder();
 
             // 1. Cấu hình Output
             string outputTemplate = Path.Combine(outputFolder, "%(title)s.%(ext)s");
-            argsBuilder.Append($" --encoding utf8 -o \"{outputTemplate}\"");
+            // --newline: Quan trọng để regex đọc từng dòng chính xác
+            argsBuilder.Append($" --encoding utf8 --newline -o \"{outputTemplate}\"");
 
-            // 2. Format và Merge
-            argsBuilder.Append(" -f \"bestvideo+bestaudio/best\" --merge-output-format mp4");
+            // 2. Chọn Format (Video hay Audio)
+            if (isAudioOnly)
+            {
+                // Tải audio và convert sang mp3
+                argsBuilder.Append(" -f \"bestaudio/best\" --extract-audio --audio-format mp3 --audio-quality 192K");
+            }
+            else
+            {
+                // Tải video tốt nhất (tối đa 1080p để đảm bảo tốc độ và độ tương thích) + audio tốt nhất
+                argsBuilder.Append(" -f \"bestvideo[height<=1080]+bestaudio/best[height<=1080]/best\" --merge-output-format mp4");
+            }
+
+            // 3. Metadata (Ảnh bìa, thông tin tác giả vào file)
+            argsBuilder.Append(" --embed-thumbnail --add-metadata");
+
+            // 4. Các cấu hình khác
             argsBuilder.Append(" --no-check-certificate --ignore-errors --no-mtime");
 
-            // ---> FIX QUAN TRỌNG: CHỈ ĐỊNH RÕ ĐƯỜNG DẪN FFMPEG <---
-            // Nếu không có dòng này, yt-dlp sẽ không tìm thấy ffmpeg để ghép file
             if (File.Exists(FfmpegPath))
             {
                 argsBuilder.Append($" --ffmpeg-location \"{FfmpegPath}\"");
             }
 
-            // 3. Subtitle
             if (!string.IsNullOrEmpty(subLangs))
             {
-                argsBuilder.Append($" --write-sub --write-auto-sub --sub-lang \"{subLangs}\"");
+                argsBuilder.Append($" --write-sub --write-auto-sub --sub-lang \"{subLangs}\" --embed-subs");
             }
 
-            // 4. Cookies
             if (!string.IsNullOrEmpty(cookiePath) && File.Exists(cookiePath))
             {
                 argsBuilder.Append($" --cookies \"{cookiePath}\"");
             }
 
-            // 5. URL
             argsBuilder.Append($" \"{url}\"");
 
-            // --- XỬ LÝ PROCESS ---
+            // --- XỬ LÝ LOG ---
             var progressRegex = new Regex(@"\[download\]\s+(\d+\.?\d*)%");
             string finalFilename = "";
             var errorLog = new StringBuilder();
-            bool isMerging = false; // Cờ đánh dấu đang ghép file
 
             try
             {
@@ -96,73 +161,42 @@ namespace YoutubeDownloaderWpf.Services
                 {
                     if (string.IsNullOrWhiteSpace(line)) return;
 
-                    // Debug: Xem log thực tế yt-dlp trả về
-                    Debug.WriteLine(line);
-
-                    // Bắt sự kiện bắt đầu ghép file
-                    if (line.Contains("[Merger]") || line.Contains("Merging formats"))
-                    {
-                        isMerging = true;
-                        // Hack nhẹ: Báo progress đặc biệt để UI biết đang xử lý
-                        progress?.Report(new SimpleProgress { Progress = 0.99, DownloadSpeed = "Đang ghép file..." });
-                    }
-
-                    // Lấy tên file kết quả
+                    // Lấy tên file
                     if (line.Contains("Destination:") && !line.Contains(".part"))
                     {
-                        // Logic cũ có thể trượt, dùng logic đơn giản hơn:
-                        // Lấy phần text sau "Destination: "
                         finalFilename = line.Replace("Destination: ", "").Trim();
                     }
-                    // Trường hợp file đã tồn tại và yt-dlp bỏ qua tải
                     else if (line.Contains("has already been downloaded"))
                     {
-                        // Cố gắng parse tên file từ dòng thông báo
-                        // Log mẫu: [download] Downloads\VideoName.mp4 has already been downloaded
                         var matchFile = Regex.Match(line, @"\[download\]\s+(.*?)\s+has already been downloaded");
                         if (matchFile.Success) finalFilename = matchFile.Groups[1].Value;
-                        progress?.Report(new SimpleProgress { Progress = 1.0, DownloadSpeed = "Hoàn tất" });
+                        progress?.Report(new SimpleProgress { Progress = 1.0, DownloadSpeed = "Đã xong" });
                     }
 
-                    // Parse tiến độ tải (Chỉ parse khi CHƯA ghép file)
-                    if (!isMerging)
+                    // Lấy tiến độ
+                    var match = progressRegex.Match(line);
+                    if (match.Success && progress != null)
                     {
-                        var match = progressRegex.Match(line);
-                        if (match.Success && progress != null)
+                        if (double.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double p))
                         {
-                            if (double.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double p))
-                            {
-                                // Nếu p = 100% nhưng chưa xong hẳn (còn merge), ta chỉ để 99% thôi
-                                double reportValue = (p >= 100) ? 0.99 : p / 100.0;
-                                progress.Report(new SimpleProgress { Progress = reportValue, DownloadSpeed = "" });
-                            }
+                            progress.Report(new SimpleProgress { Progress = p / 100.0, DownloadSpeed = "Downloading..." });
                         }
                     }
                 },
                 (errLine) => errorLog.AppendLine(errLine));
 
-                // Kiểm tra kết quả
-                // Nếu exitCode = 0 (Thành công)
-                if (exitCode == 0)
-                {
-                    // Nếu không bắt được tên file từ Log (do yt-dlp thay đổi format log), 
-                    // ta thử tìm file mới nhất trong thư mục downloads khớp với title (Optional logic)
-                    // Nhưng tốt nhất là trả về true.
-                    return new SimpleRunResult<string>(true, null, finalFilename);
-                }
-                else
-                {
-                    return new SimpleRunResult<string>(false, $"Lỗi (Code {exitCode}): " + errorLog.ToString(), null);
-                }
+                if (exitCode == 0) return new SimpleRunResult<string>(true, null, finalFilename);
+                else return new SimpleRunResult<string>(false, $"Code {exitCode}: " + errorLog.ToString(), null);
             }
             catch (Exception ex)
             {
                 return new SimpleRunResult<string>(false, ex.Message, null);
             }
         }
-        // --- GET PLAYLIST ---
+
         public async Task<SimpleRunResult<string[]>> GetPlaylistUrlsAsync(string playlistUrl)
         {
+            // --flat-playlist: Lấy danh sách siêu nhanh, không kiểm tra từng video
             string args = $"--flat-playlist --print url --no-check-certificate --ignore-errors \"{playlistUrl}\"";
             var urls = new List<string>();
             var errorLog = new StringBuilder();
@@ -178,9 +212,7 @@ namespace YoutubeDownloaderWpf.Services
                     (err) => errorLog.AppendLine(err));
 
                 if (urls.Count == 0 && exitCode != 0)
-                {
-                    return new SimpleRunResult<string[]>(false, "Không lấy được video nào.\n" + errorLog.ToString(), new string[0]);
-                }
+                    return new SimpleRunResult<string[]>(false, errorLog.ToString(), new string[0]);
 
                 return new SimpleRunResult<string[]>(true, null, urls.ToArray());
             }
@@ -190,11 +222,10 @@ namespace YoutubeDownloaderWpf.Services
             }
         }
 
-        // --- HÀM CHẠY PROCESS CHUẨN (FIX TREO UI) ---
+        // Logic chạy process ngầm (giữ nguyên nhưng đảm bảo Encoding đúng)
         private async Task<int> RunProcessAsync(string fileName, string arguments, CancellationToken ct, Action<string> onOutput, Action<string> onError)
         {
             var tcs = new TaskCompletionSource<int>();
-
             var psi = new ProcessStartInfo
             {
                 FileName = fileName,
@@ -203,39 +234,27 @@ namespace YoutubeDownloaderWpf.Services
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
-                StandardOutputEncoding = Encoding.UTF8, // Đọc tiếng Việt
+                StandardOutputEncoding = Encoding.UTF8,
                 StandardErrorEncoding = Encoding.UTF8
             };
 
             var process = new Process { StartInfo = psi };
             process.EnableRaisingEvents = true;
-
-            // Xử lý sự kiện Output (Không chặn luồng)
             process.OutputDataReceived += (s, e) => { if (e.Data != null) onOutput(e.Data); };
             process.ErrorDataReceived += (s, e) => { if (e.Data != null) onError(e.Data); };
-
             process.Exited += (s, e) => tcs.TrySetResult(process.ExitCode);
 
-            using (ct.Register(() => {
-                tcs.TrySetCanceled();
-                try { if (!process.HasExited) process.Kill(); } catch { }
-            }))
+            using (ct.Register(() => { tcs.TrySetCanceled(); try { if (!process.HasExited) process.Kill(); } catch { } }))
             {
-                if (!process.Start()) throw new Exception("Không thể khởi động process.");
-
+                if (!process.Start()) throw new Exception("Không khởi động được tool.");
                 process.BeginOutputReadLine();
                 process.BeginErrorReadLine();
-
                 return await tcs.Task;
             }
         }
 
-        // --- DOWNLOAD TOOLS (Giữ nguyên) ---
-        public async Task DownloadYtDlpAsync(IProgress<double> progress)
-        {
-            await DownloadFileAsync(YtDlpUrl, "yt-dlp.exe", progress);
-        }
-
+        // --- PHẦN TẢI TOOLS (Giữ nguyên logic cũ) ---
+        public async Task DownloadYtDlpAsync(IProgress<double> progress) { await DownloadFileAsync(YtDlpUrl, "yt-dlp.exe", progress); }
         public async Task DownloadFfmpegAsync(IProgress<double> progress)
         {
             string zipPath = "ffmpeg.zip";
@@ -257,31 +276,27 @@ namespace YoutubeDownloaderWpf.Services
         private async Task DownloadFileAsync(string url, string destination, IProgress<double> progress)
         {
             using (HttpClient client = new HttpClient())
+            using (var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
             {
-                using (var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
+                response.EnsureSuccessStatusCode();
+                var totalBytes = response.Content.Headers.ContentLength ?? -1L;
+                using (var contentStream = await response.Content.ReadAsStreamAsync())
+                using (var fileStream = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true))
                 {
-                    response.EnsureSuccessStatusCode();
-                    var totalBytes = response.Content.Headers.ContentLength ?? -1L;
-                    var canReportProgress = totalBytes != -1 && progress != null;
-
-                    using (var contentStream = await response.Content.ReadAsStreamAsync())
-                    using (var fileStream = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true))
+                    var totalRead = 0L;
+                    var buffer = new byte[8192];
+                    var isMoreToRead = true;
+                    do
                     {
-                        var totalRead = 0L;
-                        var buffer = new byte[8192];
-                        var isMoreToRead = true;
-                        do
+                        var read = await contentStream.ReadAsync(buffer, 0, buffer.Length);
+                        if (read == 0) isMoreToRead = false;
+                        else
                         {
-                            var read = await contentStream.ReadAsync(buffer, 0, buffer.Length);
-                            if (read == 0) isMoreToRead = false;
-                            else
-                            {
-                                await fileStream.WriteAsync(buffer, 0, read);
-                                totalRead += read;
-                                if (canReportProgress) progress.Report((double)totalRead / totalBytes * 100);
-                            }
-                        } while (isMoreToRead);
-                    }
+                            await fileStream.WriteAsync(buffer, 0, read);
+                            totalRead += read;
+                            if (totalBytes != -1 && progress != null) progress.Report((double)totalRead / totalBytes * 100);
+                        }
+                    } while (isMoreToRead);
                 }
             }
         }
