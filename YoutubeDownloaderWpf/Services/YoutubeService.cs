@@ -9,7 +9,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using YoutubeDownloaderWpf.Models;
-using GTranslate.Translators; // Mới: Thư viện dịch
+// Newtonsoft.Json không cần thiết nếu parse thủ công đơn giản
 
 namespace YoutubeDownloaderWpf.Services
 {
@@ -28,13 +28,9 @@ namespace YoutubeDownloaderWpf.Services
         Task DownloadFfmpegAsync(IProgress<double> progress);
         Task DownloadDenoAsync(IProgress<double> progress);
 
-        // SỬA: Thêm tham số customFileName
         Task<SimpleRunResult<string>> DownloadVideoAsync(string url, string outputFolder, string customFileName, string subLangs, string cookiePath, bool isAudioOnly, IProgress<SimpleProgress> progress, CancellationToken ct);
-
         Task<SimpleRunResult<string[]>> GetPlaylistUrlsAsync(string playlistUrl);
         Task<SimpleRunResult<DownloadItem>> GetVideoMetadataAsync(string url, string cookiePath);
-
-        // MỚI: Hàm dịch
         Task<string> TranslateToEnglishAsync(string text);
     }
 
@@ -52,29 +48,64 @@ namespace YoutubeDownloaderWpf.Services
         public bool IsFfmpegReady => File.Exists(FfmpegPath);
         public bool IsDenoReady => File.Exists(DenoPath);
 
-        // --- MỚI: HÀM DỊCH THUẬT ---
+        private readonly HttpClient _httpClient;
+
+        public YoutubeService()
+        {
+            _httpClient = new HttpClient();
+            // Giả lập User-Agent của Chrome Extension để có kết quả tốt nhất
+            _httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
+        }
+
+        // --- HÀM DỊCH THUẬT MỚI (DÙNG API CLIENTS5) ---
+        // API này thường cho kết quả tự nhiên hơn (Neural Translation)
         public async Task<string> TranslateToEnglishAsync(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) return text;
+            text = text.Trim();
+
             try
             {
-                // Sử dụng Google Translator thông qua thư viện GTranslate
-                var translator = new GoogleTranslator();
-                var result = await translator.TranslateAsync(text, "en");
-                return result.Translation;
+                // Sử dụng endpoint clients5 (dùng cho Extension) thay vì translate_a/single
+                // Endpoint này trả về mảng JSON đơn giản hơn: ["Translated Text"]
+                string url = $"https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=en&q={Uri.EscapeDataString(text)}";
+
+                var response = await _httpClient.GetAsync(url);
+                response.EnsureSuccessStatusCode();
+
+                string json = await response.Content.ReadAsStringAsync();
+
+                // API này trả về dạng: ["Translated Text"] hoặc [["Translated Text"]]
+                // Chúng ta lọc bỏ ngoặc vuông và ngoặc kép để lấy nội dung
+                if (!string.IsNullOrEmpty(json))
+                {
+                    // Cách parse "lười" nhưng hiệu quả: 
+                    // 1. Nếu response là ["..."]
+                    if (json.StartsWith("[\"") && json.EndsWith("\"]"))
+                    {
+                        string result = json.Substring(2, json.Length - 4);
+                        // Fix ký tự xuống dòng hoặc unicode escape nếu có
+                        return Regex.Unescape(result);
+                    }
+                    // 2. Nếu response phức tạp hơn, dùng Regex lấy nội dung trong ngoặc kép đầu tiên
+                    var match = Regex.Match(json, "\"([^\"]+)\"");
+                    if (match.Success)
+                    {
+                        return Regex.Unescape(match.Groups[1].Value);
+                    }
+                }
+
+                return text;
             }
             catch
             {
-                // Nếu lỗi dịch (mất mạng...) thì trả về tên gốc
                 return text;
             }
         }
 
-        // --- MỚI: HÀM LÀM SẠCH TÊN FILE (Để tránh lỗi khi lưu file) ---
         private string SanitizeFileName(string name)
         {
             if (string.IsNullOrEmpty(name)) return "video";
-            // Thay thế các ký tự cấm trong Windows \ / : * ? " < > | bằng dấu gạch ngang
             string invalidChars = Regex.Escape(new string(Path.GetInvalidFileNameChars()));
             string invalidRegStr = string.Format(@"([{0}]*\.+$)|([{0}]+)", invalidChars);
             return Regex.Replace(name, invalidRegStr, "-");
@@ -92,7 +123,6 @@ namespace YoutubeDownloaderWpf.Services
                 await RunProcessAsync(YtDlpPath, "--update-to nightly", CancellationToken.None, s => { }, e => { });
         }
 
-        // --- CẬP NHẬT HÀM NÀY TRONG YoutubeService.cs ---
         public async Task<SimpleRunResult<DownloadItem>> GetVideoMetadataAsync(string url, string cookiePath)
         {
             var args = $"--dump-json --no-playlist --ignore-errors \"{url}\"";
@@ -112,24 +142,14 @@ namespace YoutubeDownloaderWpf.Services
             var jsonOutput = new StringBuilder();
             try
             {
-                // Chạy lệnh lấy thông tin
                 await RunProcessAsync(YtDlpPath, args, CancellationToken.None, line => jsonOutput.AppendLine(line), _ => { });
                 string json = jsonOutput.ToString();
 
                 if (string.IsNullOrWhiteSpace(json))
                     return new SimpleRunResult<DownloadItem>(false, "Không lấy được thông tin video.", null);
 
-                // Lấy Title
                 string title = Regex.Match(json, "\"title\":\\s*\"(.*?)\"").Groups[1].Value;
-
-                // --- [FIX QUAN TRỌNG] ---
-                // Dòng này sẽ biến mã lỗi (-uXXXX hoặc \uXXXX) thành tiếng Hàn/Trung/Nhật chuẩn
-                try
-                {
-                    title = Regex.Unescape(title);
-                }
-                catch { }
-                // ------------------------
+                try { title = Regex.Unescape(title); } catch { }
 
                 string thumb = Regex.Match(json, "\"thumbnail\":\\s*\"(.*?)\"").Groups[1].Value;
                 string durationStr = Regex.Match(json, "\"duration\":\\s*(\\d+)").Groups[1].Value;
@@ -153,19 +173,14 @@ namespace YoutubeDownloaderWpf.Services
             }
             catch (Exception ex) { return new SimpleRunResult<DownloadItem>(false, ex.Message, null); }
         }
-        // --- SỬA: Thêm tham số customFileName ---
+
         public async Task<SimpleRunResult<string>> DownloadVideoAsync(string url, string outputFolder, string customFileName, string subLangs, string cookiePath, bool isAudioOnly, IProgress<SimpleProgress> progress, CancellationToken ct)
         {
             var argsBuilder = new StringBuilder();
             argsBuilder.Append(" --rm-cache-dir");
             if (IsDenoReady) argsBuilder.Append($" --js-runtimes \"deno:{DenoPath}\"");
 
-            // --- XỬ LÝ TÊN FILE ---
-            // Nếu có tên tùy chỉnh (đã dịch) -> Dùng tên đó
-            // Nếu không -> Dùng %(title)s để yt-dlp tự lấy tên gốc
             string fileNameTemplate = string.IsNullOrEmpty(customFileName) ? "%(title)s" : SanitizeFileName(customFileName);
-
-            // Format: Folder\TenFile.Ext
             string outputTemplate = Path.Combine(outputFolder, $"{fileNameTemplate}.%(ext)s");
 
             argsBuilder.Append($" --encoding utf8 --newline -o \"{outputTemplate}\"");
