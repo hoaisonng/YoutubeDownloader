@@ -86,6 +86,12 @@
                 </md:PopupBox>
 
                 <Button Command="{Binding OpenPlaylistCommand}" Style="{StaticResource MaterialDesignFlatButton}" Content="Quét Playlist"/>
+                <!-- Nút Cập nhật Mới -->
+                <Button Command="{Binding UpdateToolsCommand}" 
+        Style="{StaticResource MaterialDesignOutlinedButton}" 
+        Content="Cập nhật yt-dlp" 
+        Margin="10,0,0,0"
+        ToolTip="Bấm vào đây nếu gặp lỗi 'n challenge' hoặc tải thất bại"/>
             </StackPanel>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal">
@@ -146,7 +152,7 @@
 
         <!-- 4. FOOTER STATUS -->
         <StatusBar Grid.Row="3" Padding="10">
-            <TextBlock Text="{Binding LogMessage}" FontWeight="Bold"/>
+            <TextBox Text="{Binding LogMessage}" FontWeight="Bold" TextWrapping="WrapWithOverflow"/>
             <Separator/>
             <TextBlock Text="{Binding TotalStatusInfo}"/>
             <Separator/>

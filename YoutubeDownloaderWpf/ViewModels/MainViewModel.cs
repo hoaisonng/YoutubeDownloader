@@ -60,11 +60,52 @@ namespace YoutubeDownloaderWpf.ViewModels
 
         private void CheckToolsStatus()
         {
-            AreToolsMissing = !_youtubeService.IsYtDlpReady || !_youtubeService.IsFfmpegReady;
-            ToolStatusMessage = AreToolsMissing ? "Thiếu công cụ (yt-dlp/ffmpeg)" : "Công cụ đã sẵn sàng";
-            LogMessage = AreToolsMissing ? "Cần tải công cụ trước." : "Sẵn sàng tải.";
-        }
+            bool ytdlOk = _youtubeService.IsYtDlpReady;
+            bool ffmpegOk = _youtubeService.IsFfmpegReady;
+            bool denoOk = _youtubeService.IsDenoReady; // Kiểm tra Deno
 
+            // Thiếu bất kỳ cái nào thì báo thiếu
+            AreToolsMissing = !ytdlOk || !ffmpegOk || !denoOk;
+
+            if (AreToolsMissing)
+            {
+                ToolStatusMessage = "Thiếu công cụ: " +
+                                    (!ytdlOk ? "[yt-dlp] " : "") +
+                                    (!ffmpegOk ? "[ffmpeg] " : "") +
+                                    (!denoOk ? "[deno] " : "");
+                LogMessage = "Cần tải đầy đủ công cụ để fix lỗi 'n challenge'.";
+            }
+            else
+            {
+                ToolStatusMessage = "Công cụ đã sẵn sàng (Đã có Deno).";
+                LogMessage = "Sẵn sàng tải video.";
+            }
+        }
+        // Tìm hàm UpdateTools và sửa lại (hoặc copy đè lên hàm cũ)
+        [RelayCommand]
+        private async Task UpdateTools()
+        {
+            IsBusyWithTools = true;
+            ToolStatusMessage = "Đang cập nhật yt-dlp...";
+            LogMessage = "Đang kiểm tra và cập nhật yt-dlp (bản Nightly)...";
+
+            try
+            {
+                await _youtubeService.UpdateToolsAsync();
+                LogMessage = "Cập nhật thành công! Hãy thử tải lại.";
+                MessageBox.Show("Đã cập nhật yt-dlp lên bản mới nhất!\nBạn có thể tải video ngay.", "Thành công");
+            }
+            catch (Exception ex)
+            {
+                LogMessage = $"Lỗi update: {ex.Message}";
+                MessageBox.Show($"Lỗi cập nhật: {ex.Message}");
+            }
+            finally
+            {
+                IsBusyWithTools = false;
+                CheckToolsStatus();
+            }
+        }
         [RelayCommand]
         private void ChangeOutputFolder()
         {
@@ -113,6 +154,7 @@ namespace YoutubeDownloaderWpf.ViewModels
             }
         }
 
+        // Thay thế hàm DownloadMissingTools cũ
         [RelayCommand]
         private async Task DownloadMissingTools()
         {
@@ -120,13 +162,40 @@ namespace YoutubeDownloaderWpf.ViewModels
             try
             {
                 var progress = new Progress<double>(p => ToolDownloadProgress = p);
-                if (!_youtubeService.IsYtDlpReady) await _youtubeService.DownloadYtDlpAsync(progress);
-                if (!_youtubeService.IsFfmpegReady) await _youtubeService.DownloadFfmpegAsync(progress);
+
+                if (!_youtubeService.IsYtDlpReady)
+                {
+                    LogMessage = "Đang tải yt-dlp...";
+                    await _youtubeService.DownloadYtDlpAsync(progress);
+                }
+
+                if (!_youtubeService.IsDenoReady)
+                {
+                    LogMessage = "Đang tải Deno (Fix lỗi Javascript)...";
+                    ToolDownloadProgress = 0; // Reset thanh loading
+                    await _youtubeService.DownloadDenoAsync(progress);
+                }
+
+                if (!_youtubeService.IsFfmpegReady)
+                {
+                    LogMessage = "Đang tải ffmpeg...";
+                    ToolDownloadProgress = 0;
+                    await _youtubeService.DownloadFfmpegAsync(progress);
+                }
+
                 CheckToolsStatus();
-                LogMessage = "Tải công cụ thành công!";
+                LogMessage = "Đã tải đủ công cụ!";
             }
-            catch (Exception ex) { LogMessage = $"Lỗi tải tool: {ex.Message}"; }
-            finally { IsBusyWithTools = false; ToolDownloadProgress = 0; }
+            catch (Exception ex)
+            {
+                LogMessage = $"Lỗi tải tool: {ex.Message}";
+                MessageBox.Show(ex.Message, "Lỗi Tải Tool");
+            }
+            finally
+            {
+                IsBusyWithTools = false;
+                ToolDownloadProgress = 0;
+            }
         }
 
         [RelayCommand] private void ClearCookies() { CookieFilePath = ""; LogMessage = "Đã xóa Cookies (Chế độ Guest)."; }

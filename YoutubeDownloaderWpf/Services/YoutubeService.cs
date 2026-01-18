@@ -16,19 +16,19 @@ namespace YoutubeDownloaderWpf.Services
     {
         string YtDlpPath { get; set; }
         string FfmpegPath { get; set; }
+        string DenoPath { get; set; } // Mới: Đường dẫn Deno
         bool IsYtDlpReady { get; }
         bool IsFfmpegReady { get; }
+        bool IsDenoReady { get; } // Mới: Kiểm tra Deno
 
         Task InitializeAsync();
         Task UpdateToolsAsync();
         Task DownloadYtDlpAsync(IProgress<double> progress);
         Task DownloadFfmpegAsync(IProgress<double> progress);
+        Task DownloadDenoAsync(IProgress<double> progress); // Mới: Hàm tải Deno
 
-        // Đã thêm tham số isAudioOnly
         Task<SimpleRunResult<string>> DownloadVideoAsync(string url, string outputFolder, string subLangs, string cookiePath, bool isAudioOnly, IProgress<SimpleProgress> progress, CancellationToken ct);
         Task<SimpleRunResult<string[]>> GetPlaylistUrlsAsync(string playlistUrl);
-
-        // Hàm mới: Lấy thông tin video
         Task<SimpleRunResult<DownloadItem>> GetVideoMetadataAsync(string url, string cookiePath);
     }
 
@@ -36,12 +36,16 @@ namespace YoutubeDownloaderWpf.Services
     {
         private const string YtDlpUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
         private const string FfmpegUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip";
+        // Link tải Deno chính chủ cho Windows (x64)
+        private const string DenoUrl = "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip";
 
         public string YtDlpPath { get; set; } = "yt-dlp.exe";
         public string FfmpegPath { get; set; } = "ffmpeg.exe";
+        public string DenoPath { get; set; } = "deno.exe"; // Tên file Deno
 
         public bool IsYtDlpReady => File.Exists(YtDlpPath);
         public bool IsFfmpegReady => File.Exists(FfmpegPath);
+        public bool IsDenoReady => File.Exists(DenoPath);
 
         public async Task InitializeAsync()
         {
@@ -51,17 +55,34 @@ namespace YoutubeDownloaderWpf.Services
 
         public async Task UpdateToolsAsync()
         {
-            if (IsYtDlpReady) await RunProcessAsync(YtDlpPath, "-U", CancellationToken.None, s => { }, e => { });
+            if (IsYtDlpReady)
+            {
+                // Update lên bản Nightly để tương thích tốt nhất
+                await RunProcessAsync(YtDlpPath, "--update-to nightly", CancellationToken.None, s => { }, e => { });
+            }
         }
 
-        // --- HÀM MỚI: LẤY THÔNG TIN VIDEO ---
         public async Task<SimpleRunResult<DownloadItem>> GetVideoMetadataAsync(string url, string cookiePath)
         {
-            // --dump-json: Lấy dữ liệu dạng JSON thay vì tải về
             var args = $"--dump-json --no-playlist --ignore-errors \"{url}\"";
+
+            // --- CẤU HÌNH DENO CHO METADATA ---
+            if (IsDenoReady)
+            {
+                // Chỉ định rõ đường dẫn Deno để giải mã JS
+                args = $"--js-runtimes \"deno:{DenoPath}\" " + args;
+            }
+            // ----------------------------------
+
             if (!string.IsNullOrEmpty(cookiePath) && File.Exists(cookiePath))
             {
                 args += $" --cookies \"{cookiePath}\"";
+                string uaPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "user-agent.txt");
+                if (File.Exists(uaPath))
+                {
+                    string ua = File.ReadAllText(uaPath).Trim();
+                    if (!string.IsNullOrEmpty(ua)) args += $" --user-agent \"{ua}\"";
+                }
             }
 
             var jsonOutput = new StringBuilder();
@@ -74,12 +95,10 @@ namespace YoutubeDownloaderWpf.Services
                 if (string.IsNullOrWhiteSpace(json))
                     return new SimpleRunResult<DownloadItem>(false, "Không lấy được thông tin video.", null);
 
-                // Dùng Regex để tách thông tin từ chuỗi JSON (đơn giản, không cần thư viện JSON)
                 string title = Regex.Match(json, "\"title\":\\s*\"(.*?)\"").Groups[1].Value;
                 string thumb = Regex.Match(json, "\"thumbnail\":\\s*\"(.*?)\"").Groups[1].Value;
-                string durationStr = Regex.Match(json, "\"duration\":\\s*(\\d+)").Groups[1].Value; // Giây
+                string durationStr = Regex.Match(json, "\"duration\":\\s*(\\d+)").Groups[1].Value;
 
-                // Chuyển giây sang format mm:ss
                 string durationDisplay = "00:00";
                 if (int.TryParse(durationStr, out int seconds))
                 {
@@ -105,32 +124,41 @@ namespace YoutubeDownloaderWpf.Services
             }
         }
 
-        // --- HÀM TẢI VIDEO ---
         public async Task<SimpleRunResult<string>> DownloadVideoAsync(string url, string outputFolder, string subLangs, string cookiePath, bool isAudioOnly, IProgress<SimpleProgress> progress, CancellationToken ct)
         {
             var argsBuilder = new StringBuilder();
 
-            // 1. Cấu hình Output
+            // 1. --- CẤU HÌNH DENO & FIX LỖI (QUAN TRỌNG) ---
+            argsBuilder.Append(" --rm-cache-dir"); // Xóa cache cũ
+
+            if (IsDenoReady)
+            {
+                // Sử dụng Deno để giải mã n-challenge
+                // Cú pháp: --js-runtimes deno:/path/to/deno
+                argsBuilder.Append($" --js-runtimes \"deno:{DenoPath}\"");
+            }
+            // -----------------------------------------------
+
             string outputTemplate = Path.Combine(outputFolder, "%(title)s.%(ext)s");
-            // --newline: Quan trọng để regex đọc từng dòng chính xác
             argsBuilder.Append($" --encoding utf8 --newline -o \"{outputTemplate}\"");
 
-            // 2. Chọn Format (Video hay Audio)
+            string uaPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "user-agent.txt");
+            if (File.Exists(uaPath))
+            {
+                string ua = File.ReadAllText(uaPath).Trim();
+                if (!string.IsNullOrEmpty(ua)) argsBuilder.Append($" --user-agent \"{ua}\"");
+            }
+
             if (isAudioOnly)
             {
-                // Tải audio và convert sang mp3
                 argsBuilder.Append(" -f \"bestaudio/best\" --extract-audio --audio-format mp3 --audio-quality 192K");
             }
             else
             {
-                // Tải video tốt nhất (tối đa 1080p để đảm bảo tốc độ và độ tương thích) + audio tốt nhất
                 argsBuilder.Append(" -f \"bestvideo[height<=1080]+bestaudio/best[height<=1080]/best\" --merge-output-format mp4");
             }
 
-            // 3. Metadata (Ảnh bìa, thông tin tác giả vào file)
             argsBuilder.Append(" --embed-thumbnail --add-metadata");
-
-            // 4. Các cấu hình khác
             argsBuilder.Append(" --no-check-certificate --ignore-errors --no-mtime");
 
             if (File.Exists(FfmpegPath))
@@ -150,7 +178,6 @@ namespace YoutubeDownloaderWpf.Services
 
             argsBuilder.Append($" \"{url}\"");
 
-            // --- XỬ LÝ LOG ---
             var progressRegex = new Regex(@"\[download\]\s+(\d+\.?\d*)%");
             string finalFilename = "";
             var errorLog = new StringBuilder();
@@ -160,8 +187,6 @@ namespace YoutubeDownloaderWpf.Services
                 int exitCode = await RunProcessAsync(YtDlpPath, argsBuilder.ToString(), ct, (line) =>
                 {
                     if (string.IsNullOrWhiteSpace(line)) return;
-
-                    // Lấy tên file
                     if (line.Contains("Destination:") && !line.Contains(".part"))
                     {
                         finalFilename = line.Replace("Destination: ", "").Trim();
@@ -173,7 +198,6 @@ namespace YoutubeDownloaderWpf.Services
                         progress?.Report(new SimpleProgress { Progress = 1.0, DownloadSpeed = "Đã xong" });
                     }
 
-                    // Lấy tiến độ
                     var match = progressRegex.Match(line);
                     if (match.Success && progress != null)
                     {
@@ -185,8 +209,12 @@ namespace YoutubeDownloaderWpf.Services
                 },
                 (errLine) => errorLog.AppendLine(errLine));
 
-                if (exitCode == 0) return new SimpleRunResult<string>(true, null, finalFilename);
-                else return new SimpleRunResult<string>(false, $"Code {exitCode}: " + errorLog.ToString(), null);
+                if (exitCode != 0 || (string.IsNullOrEmpty(finalFilename) && errorLog.Length > 0))
+                {
+                    return new SimpleRunResult<string>(false, $"Lỗi (Code {exitCode}): " + errorLog.ToString(), null);
+                }
+
+                return new SimpleRunResult<string>(true, null, finalFilename);
             }
             catch (Exception ex)
             {
@@ -196,24 +224,17 @@ namespace YoutubeDownloaderWpf.Services
 
         public async Task<SimpleRunResult<string[]>> GetPlaylistUrlsAsync(string playlistUrl)
         {
-            // --flat-playlist: Lấy danh sách siêu nhanh, không kiểm tra từng video
             string args = $"--flat-playlist --print url --no-check-certificate --ignore-errors \"{playlistUrl}\"";
             var urls = new List<string>();
             var errorLog = new StringBuilder();
 
             try
             {
-                int exitCode = await RunProcessAsync(YtDlpPath, args, CancellationToken.None,
-                    (line) =>
-                    {
-                        if (!string.IsNullOrWhiteSpace(line) && line.Trim().StartsWith("http"))
-                            urls.Add(line.Trim());
-                    },
+                await RunProcessAsync(YtDlpPath, args, CancellationToken.None,
+                    (line) => { if (!string.IsNullOrWhiteSpace(line) && line.Trim().StartsWith("http")) urls.Add(line.Trim()); },
                     (err) => errorLog.AppendLine(err));
 
-                if (urls.Count == 0 && exitCode != 0)
-                    return new SimpleRunResult<string[]>(false, errorLog.ToString(), new string[0]);
-
+                if (urls.Count == 0) return new SimpleRunResult<string[]>(false, errorLog.ToString(), new string[0]);
                 return new SimpleRunResult<string[]>(true, null, urls.ToArray());
             }
             catch (Exception ex)
@@ -222,7 +243,6 @@ namespace YoutubeDownloaderWpf.Services
             }
         }
 
-        // Logic chạy process ngầm (giữ nguyên nhưng đảm bảo Encoding đúng)
         private async Task<int> RunProcessAsync(string fileName, string arguments, CancellationToken ct, Action<string> onOutput, Action<string> onError)
         {
             var tcs = new TaskCompletionSource<int>();
@@ -253,8 +273,27 @@ namespace YoutubeDownloaderWpf.Services
             }
         }
 
-        // --- PHẦN TẢI TOOLS (Giữ nguyên logic cũ) ---
         public async Task DownloadYtDlpAsync(IProgress<double> progress) { await DownloadFileAsync(YtDlpUrl, "yt-dlp.exe", progress); }
+
+        // Hàm tải Deno (Giống Ffmpeg vì nó là file Zip)
+        public async Task DownloadDenoAsync(IProgress<double> progress)
+        {
+            string zipPath = "deno.zip";
+            await DownloadFileAsync(DenoUrl, zipPath, progress);
+            using (ZipArchive archive = ZipFile.OpenRead(zipPath))
+            {
+                foreach (ZipArchiveEntry entry in archive.Entries)
+                {
+                    if (entry.FullName.EndsWith("deno.exe", StringComparison.OrdinalIgnoreCase))
+                    {
+                        entry.ExtractToFile("deno.exe", true);
+                        break;
+                    }
+                }
+            }
+            if (File.Exists(zipPath)) File.Delete(zipPath);
+        }
+
         public async Task DownloadFfmpegAsync(IProgress<double> progress)
         {
             string zipPath = "ffmpeg.zip";
