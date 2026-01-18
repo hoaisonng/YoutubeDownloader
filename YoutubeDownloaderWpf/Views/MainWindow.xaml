@@ -76,37 +76,189 @@
             </StackPanel>
         </Border>
 
-        <GroupBox Grid.Row="1" Header="Cấu hình tải" Padding="10">
-            <StackPanel>
+        <GroupBox
+            Grid.Row="1"
+            Padding="10"
+            Header="Cấu hình tải">
+            <!--<StackPanel>
                 <Grid Margin="0,0,0,10">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <TextBox Grid.Column="0" Text="{Binding InputUrl, UpdateSourceTrigger=PropertyChanged}" 
-                             FontSize="14" Padding="5" ToolTip="Link Video/Playlist"/>
-                    <Button Grid.Column="1" Content="Thêm vào hàng đợi" Width="120" Command="{Binding AddDownloadCommand}" 
+                    <TextBox Text="{Binding InputUrl, UpdateSourceTrigger=PropertyChanged}"
+                             FontSize="14" Padding="5" ToolTip="Nhập link Youtube Video hoặc Playlist"/>
+                    <Button Content="Thêm vào hàng đợi" Command="{Binding AddDownloadCommand}"
                             Margin="10,0,0,0" Padding="15,5" FontWeight="Bold"/>
                 </Grid>
 
                 <StackPanel Orientation="Horizontal" Margin="0,5">
-                    <TextBlock Text="Lưu tại:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                    <TextBox Text="{Binding OutputFolderPath}" Width="150" IsReadOnly="True" VerticalAlignment="Center" Padding="3"/>
-                    <Button Content="..." Command="{Binding ChangeOutputFolderCommand}" Width="30" Margin="2,0,15,0"/>
+                    <CheckBox Content="Tải kèm Subtitle" IsChecked="{Binding IsDownloadingSubtitles}"
+                              VerticalAlignment="Center" Margin="0,0,20,0"/>
 
-                    <TextBlock Text="Cookies:" VerticalAlignment="Center" Margin="0,0,5,0" FontWeight="Bold"/>
-                    <TextBox Text="{Binding CookieFilePath}" Width="150" IsReadOnly="True" VerticalAlignment="Center" Padding="3" ToolTip="File cookies.txt"/>
-                    <Button Content="..." Command="{Binding SelectCookieFileCommand}" Width="30" Margin="2,0,0,0" ToolTip="Chọn file cookies.txt"/>
-                    <Button Content="X" Command="{Binding ClearCookiesCommand}" Width="20" Margin="2,0,15,0" Background="#FFEBEE" Foreground="Red" FontWeight="Bold" ToolTip="Xóa cookies"/>
+                    <TextBlock Text="Cookies:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                    <TextBox Text="{Binding CookieFilePath}" Width="150" IsReadOnly="True" VerticalAlignment="Center"/>
+                    <Button Content="..." Command="{Binding SelectCookieFileCommand}" Width="30" Margin="5,0,0,0"/>
 
-                    <CheckBox Content="Sub Việt" IsChecked="{Binding IsSubVi}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                    <CheckBox Content="Sub Anh" IsChecked="{Binding IsSubEn}" VerticalAlignment="Center"/>
+                    <Button Content="Cập nhật yt-dlp" Command="{Binding UpdateToolsCommand}" Margin="20,0,0,0"
+                            IsEnabled="{Binding AreToolsMissing, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}"/>
+                    <Button Content="Xóa/Hủy All" Command="{Binding CancelAllCommand}" Margin="10,0,0,0" Background="#FFEBEE"/>
+                </StackPanel>
+            -->
+            <!--</StackPanel>-->
+            <StackPanel Grid.Row="1">
+                <Grid Margin="0,0,0,5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox
+                        Grid.Column="0"
+                        Padding="5"
+                        Text="{Binding InputUrl}"
+                        ToolTip="Nhập URL video lẻ" />
+                    <Button
+                        Grid.Column="1"
+                        Width="100"
+                        Margin="5,0,0,0"
+                        Padding="10,5"
+                        Command="{Binding AddDownloadCommand}"
+                        Content="Thêm Video Lẻ" />
+                </Grid>
+                <Grid Margin="0,5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock
+                        Margin="0,0,5,0"
+                        VerticalAlignment="Center"
+                        FontWeight="Bold"
+                        Text="Lưu tại:" />
+
+                    <TextBox
+                        Grid.Column="1"
+                        Padding="5"
+                        VerticalAlignment="Center"
+                        Background="#F5F5F5"
+                        IsReadOnly="True"
+                        Text="{Binding OutputFolderPath}" />
+
+                    <Button
+                        Grid.Column="2"
+                        Margin="5,0,0,0"
+                        Padding="10,5"
+                        Command="{Binding ChangeOutputFolderCommand}"
+                        Content="Thay đổi..." />
+                </Grid>
+                <StackPanel Margin="0,5" Orientation="Horizontal">
+                    <Button
+                        Margin="0,0,15,0"
+                        Padding="10,5"
+                        Background="#E3F2FD"
+                        Command="{Binding OpenPlaylistCommand}"
+                        Content="📂 Tải Playlist" />
+
+                    <Button
+                        Margin="0,0,15,0"
+                        Padding="10,5"
+                        Background="#FFF3E0"
+                        Command="{Binding OpenLoginCommand}"
+                        Content="🔑 Đăng nhập (Member)" />
+
+                    <Border
+                        Margin="0,0,15,0"
+                        Padding="5,0"
+                        VerticalAlignment="Center"
+                        BorderBrush="Gray"
+                        BorderThickness="1"
+                        CornerRadius="3">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock
+                                Margin="0,0,5,0"
+                                VerticalAlignment="Center"
+                                FontWeight="Bold"
+                                Text="Sub:" />
+                            <CheckBox
+                                Margin="0,0,10,0"
+                                VerticalAlignment="Center"
+                                Content="Tiếng Việt"
+                                IsChecked="{Binding IsSubVi}" />
+                            <CheckBox
+                                VerticalAlignment="Center"
+                                Content="English"
+                                IsChecked="{Binding IsSubEn}" />
+                        </StackPanel>
+                    </Border>
+
+                    <!--<TextBlock Text="Cookies:" VerticalAlignment="Center"/>
+                    <TextBox Text="{Binding CookieFilePath}" Width="100" IsReadOnly="True" VerticalAlignment="Center" Margin="5,0"/>-->
+                    <Border
+                        Padding="5,2"
+                        VerticalAlignment="Center"
+                        Background="#FAFAFA"
+                        BorderBrush="#BDBDBD"
+                        BorderThickness="1"
+                        CornerRadius="4">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock
+                                Margin="0,0,5,0"
+                                VerticalAlignment="Center"
+                                FontWeight="SemiBold"
+                                Text="🍪 Cookies:" />
+
+                            <TextBox
+                                Width="120"
+                                Margin="0,0,5,0"
+                                VerticalAlignment="Center"
+                                Background="White"
+                                BorderThickness="0"
+                                FontStyle="Italic"
+                                Foreground="Gray"
+                                IsReadOnly="True"
+                                Text="{Binding CookieFilePath}"
+                                TextAlignment="Right"
+                                ToolTip="{Binding CookieFilePath}" />
+
+                            <Button
+                                Margin="0,0,2,0"
+                                Padding="8,2"
+                                Background="White"
+                                BorderBrush="Gray"
+                                Command="{Binding SelectCookieFileCommand}"
+                                ToolTip="Chọn file cookies có sẵn từ máy (.txt)">
+                                <TextBlock FontWeight="Bold" Text="📂" />
+                            </Button>
+
+                            <Button
+                                Padding="8,2"
+                                Background="#FFEBEE"
+                                BorderBrush="#EF9A9A"
+                                Command="{Binding ClearCookiesCommand}"
+                                ToolTip="Xóa cookies (Chuyển về chế độ tải thường)">
+                                <TextBlock
+                                    FontWeight="Bold"
+                                    Foreground="#C62828"
+                                    Text="❌" />
+                            </Button>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
 
-                <StackPanel Orientation="Horizontal" Margin="0,5">
-                    <Button Content="Mở Thư Mục" Command="{Binding OpenOutputFolderCommand}" Margin="0,0,10,0"/>
-                    <Button Content="Update yt-dlp" Command="{Binding UpdateToolsCommand}" />
-                    <Button Content="Hủy Tất Cả" Command="{Binding CancelAllCommand}" Margin="10,0,0,0" Foreground="Red"/>
+                <StackPanel Margin="0,5" Orientation="Horizontal">
+                    <Button Command="{Binding UpdateToolsCommand}" Content="Cập nhật yt-dlp" />
+                    <Button
+                        Margin="10,0,0,0"
+                        Command="{Binding CancelAllCommand}"
+                        Content="Hủy Tất Cả"
+                        Foreground="Red" />
+                    <Button
+                        Margin="20,0,0,0"
+                        Command="{Binding OpenOutputFolderCommand}"
+                        Content="📂 Mở Thư Mục Tải"
+                        FontWeight="Bold" />
                 </StackPanel>
             </StackPanel>
         </GroupBox>
@@ -167,10 +319,10 @@
 
         <StatusBar Grid.Row="3" Padding="5">
             <StatusBarItem>
-                <TextBox
+                <TextBlock
                     Width="400"
                     Text="{Binding LogMessage}"
-                    TextWrapping="WrapWithOverflow" />
+                    TextTrimming="CharacterEllipsis" />
             </StatusBarItem>
 
             <StatusBarItem HorizontalAlignment="Right">
