@@ -16,11 +16,12 @@ namespace YoutubeDownloaderWpf.ViewModels
 
         [ObservableProperty] private string inputUrl;
         [ObservableProperty] private string cookieFilePath;
-        [ObservableProperty] private bool isSubVi = false; // Mặc định tắt
+        [ObservableProperty] private bool isSubVi = false;
         [ObservableProperty] private bool isSubEn = false;
-
-        // Mới: Chế độ chỉ tải Audio
         [ObservableProperty] private bool isAudioOnly;
+
+        // MỚI: Biến bật tắt chế độ tự động dịch
+        [ObservableProperty] private bool isAutoTranslate = false;
 
         [ObservableProperty] private string logMessage;
         [ObservableProperty] private bool areToolsMissing;
@@ -36,11 +37,9 @@ namespace YoutubeDownloaderWpf.ViewModels
         public MainViewModel(IYoutubeService youtubeService)
         {
             _youtubeService = youtubeService;
-            _concurrencyLimiter = new SemaphoreSlim(3); // Tải tối đa 3 video cùng lúc
-
+            _concurrencyLimiter = new SemaphoreSlim(3);
             OutputFolderPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Downloads");
             if (!Directory.Exists(OutputFolderPath)) Directory.CreateDirectory(OutputFolderPath);
-
             _ = InitializeApp();
         }
 
@@ -52,60 +51,22 @@ namespace YoutubeDownloaderWpf.ViewModels
             return langs.Count == 0 ? null : string.Join(",", langs);
         }
 
-        private async Task InitializeApp()
-        {
-            await _youtubeService.InitializeAsync();
-            CheckToolsStatus();
-        }
+        private async Task InitializeApp() { await _youtubeService.InitializeAsync(); CheckToolsStatus(); }
 
         private void CheckToolsStatus()
         {
             bool ytdlOk = _youtubeService.IsYtDlpReady;
             bool ffmpegOk = _youtubeService.IsFfmpegReady;
-            bool denoOk = _youtubeService.IsDenoReady; // Kiểm tra Deno
-
-            // Thiếu bất kỳ cái nào thì báo thiếu
+            bool denoOk = _youtubeService.IsDenoReady;
             AreToolsMissing = !ytdlOk || !ffmpegOk || !denoOk;
-
             if (AreToolsMissing)
             {
-                ToolStatusMessage = "Thiếu công cụ: " +
-                                    (!ytdlOk ? "[yt-dlp] " : "") +
-                                    (!ffmpegOk ? "[ffmpeg] " : "") +
-                                    (!denoOk ? "[deno] " : "");
-                LogMessage = "Cần tải đầy đủ công cụ để fix lỗi 'n challenge'.";
+                ToolStatusMessage = "Thiếu công cụ: " + (!ytdlOk ? "[yt-dlp] " : "") + (!ffmpegOk ? "[ffmpeg] " : "") + (!denoOk ? "[deno] " : "");
+                LogMessage = "Cần tải đầy đủ công cụ.";
             }
-            else
-            {
-                ToolStatusMessage = "Công cụ đã sẵn sàng (Đã có Deno).";
-                LogMessage = "Sẵn sàng tải video.";
-            }
+            else { ToolStatusMessage = "Công cụ đã sẵn sàng."; LogMessage = "Sẵn sàng tải video."; }
         }
-        // Tìm hàm UpdateTools và sửa lại (hoặc copy đè lên hàm cũ)
-        [RelayCommand]
-        private async Task UpdateTools()
-        {
-            IsBusyWithTools = true;
-            ToolStatusMessage = "Đang cập nhật yt-dlp...";
-            LogMessage = "Đang kiểm tra và cập nhật yt-dlp (bản Nightly)...";
 
-            try
-            {
-                await _youtubeService.UpdateToolsAsync();
-                LogMessage = "Cập nhật thành công! Hãy thử tải lại.";
-                MessageBox.Show("Đã cập nhật yt-dlp lên bản mới nhất!\nBạn có thể tải video ngay.", "Thành công");
-            }
-            catch (Exception ex)
-            {
-                LogMessage = $"Lỗi update: {ex.Message}";
-                MessageBox.Show($"Lỗi cập nhật: {ex.Message}");
-            }
-            finally
-            {
-                IsBusyWithTools = false;
-                CheckToolsStatus();
-            }
-        }
         [RelayCommand]
         private void ChangeOutputFolder()
         {
@@ -136,11 +97,7 @@ namespace YoutubeDownloaderWpf.ViewModels
         private void OpenLogin()
         {
             var loginWin = new LoginWindow();
-            if (loginWin.ShowDialog() == true)
-            {
-                CookieFilePath = loginWin.SavedCookiePath;
-                LogMessage = "Đã cập nhật Cookies!";
-            }
+            if (loginWin.ShowDialog() == true) { CookieFilePath = loginWin.SavedCookiePath; LogMessage = "Đã cập nhật Cookies!"; }
         }
 
         [RelayCommand]
@@ -150,11 +107,10 @@ namespace YoutubeDownloaderWpf.ViewModels
             if (playlistWin.ShowDialog() == true)
             {
                 foreach (var url in playlistWin.SelectedUrls) QueueVideo(url);
-                LogMessage = $"Đã thêm {playlistWin.SelectedUrls.Count} video từ playlist.";
+                LogMessage = $"Đã thêm {playlistWin.SelectedUrls.Count} video.";
             }
         }
 
-        // Thay thế hàm DownloadMissingTools cũ
         [RelayCommand]
         private async Task DownloadMissingTools()
         {
@@ -162,53 +118,33 @@ namespace YoutubeDownloaderWpf.ViewModels
             try
             {
                 var progress = new Progress<double>(p => ToolDownloadProgress = p);
-
-                if (!_youtubeService.IsYtDlpReady)
-                {
-                    LogMessage = "Đang tải yt-dlp...";
-                    await _youtubeService.DownloadYtDlpAsync(progress);
-                }
-
-                if (!_youtubeService.IsDenoReady)
-                {
-                    LogMessage = "Đang tải Deno (Fix lỗi Javascript)...";
-                    ToolDownloadProgress = 0; // Reset thanh loading
-                    await _youtubeService.DownloadDenoAsync(progress);
-                }
-
-                if (!_youtubeService.IsFfmpegReady)
-                {
-                    LogMessage = "Đang tải ffmpeg...";
-                    ToolDownloadProgress = 0;
-                    await _youtubeService.DownloadFfmpegAsync(progress);
-                }
-
-                CheckToolsStatus();
-                LogMessage = "Đã tải đủ công cụ!";
+                if (!_youtubeService.IsYtDlpReady) { LogMessage = "Tải yt-dlp..."; await _youtubeService.DownloadYtDlpAsync(progress); }
+                if (!_youtubeService.IsDenoReady) { LogMessage = "Tải Deno..."; ToolDownloadProgress = 0; await _youtubeService.DownloadDenoAsync(progress); }
+                if (!_youtubeService.IsFfmpegReady) { LogMessage = "Tải ffmpeg..."; ToolDownloadProgress = 0; await _youtubeService.DownloadFfmpegAsync(progress); }
+                CheckToolsStatus(); LogMessage = "Tải công cụ thành công!";
             }
-            catch (Exception ex)
-            {
-                LogMessage = $"Lỗi tải tool: {ex.Message}";
-                MessageBox.Show(ex.Message, "Lỗi Tải Tool");
-            }
-            finally
-            {
-                IsBusyWithTools = false;
-                ToolDownloadProgress = 0;
-            }
+            catch (Exception ex) { LogMessage = $"Lỗi: {ex.Message}"; MessageBox.Show(ex.Message); }
+            finally { IsBusyWithTools = false; ToolDownloadProgress = 0; }
         }
 
-        [RelayCommand] private void ClearCookies() { CookieFilePath = ""; LogMessage = "Đã xóa Cookies (Chế độ Guest)."; }
+        [RelayCommand]
+        private async Task UpdateTools()
+        {
+            IsBusyWithTools = true;
+            LogMessage = "Đang cập nhật yt-dlp...";
+            try { await _youtubeService.UpdateToolsAsync(); LogMessage = "Cập nhật xong."; MessageBox.Show("Đã cập nhật yt-dlp!"); }
+            catch (Exception ex) { LogMessage = $"Lỗi update: {ex.Message}"; }
+            finally { IsBusyWithTools = false; }
+        }
+
+        [RelayCommand] private void ClearCookies() { CookieFilePath = ""; LogMessage = "Đã xóa Cookies."; }
 
         [RelayCommand]
         private async Task AddDownload()
         {
             if (AreToolsMissing) { MessageBox.Show("Vui lòng tải tool trước."); return; }
             if (string.IsNullOrWhiteSpace(InputUrl)) return;
-
-            string urlToAdd = InputUrl;
-            InputUrl = ""; // Xóa ô nhập liệu ngay
-
+            string urlToAdd = InputUrl; InputUrl = "";
             if (urlToAdd.Contains("playlist?list="))
             {
                 LogMessage = "Đang quét playlist...";
@@ -223,55 +159,54 @@ namespace YoutubeDownloaderWpf.ViewModels
                     });
                 });
             }
-            else
-            {
-                QueueVideo(urlToAdd);
-                UpdateTotalStatus();
-            }
+            else { QueueVideo(urlToAdd); UpdateTotalStatus(); }
         }
 
-        // --- Logic chính: Thêm vào hàng đợi ---
+        // --- SỬA LOGIC: Lấy thông tin -> Dịch (nếu cần) -> Tải ---
         private async void QueueVideo(string url)
         {
-            // Bước 1: Tạo item tạm
             var item = new DownloadItem { Url = url, Title = "Đang lấy thông tin...", Status = "Checking..." };
-            Downloads.Insert(0, item); // Thêm vào đầu danh sách cho dễ thấy
+            Downloads.Insert(0, item);
 
-            // Bước 2: Lấy metadata ở background
             await Task.Run(async () =>
             {
                 var meta = await _youtubeService.GetVideoMetadataAsync(url, CookieFilePath);
 
-                Application.Current.Dispatcher.Invoke(() =>
+                // Logic Dịch thuật
+                if (meta.Success && meta.Data != null)
                 {
-                    if (meta.Success && meta.Data != null)
+                    string finalTitle = meta.Data.Title;
+
+                    if (IsAutoTranslate)
                     {
-                        item.Title = meta.Data.Title;
+                        // Gọi hàm dịch sang tiếng Anh
+                        Application.Current.Dispatcher.Invoke(() => item.Status = "Translating...");
+                        string translated = await _youtubeService.TranslateToEnglishAsync(finalTitle);
+                        if (!string.IsNullOrEmpty(translated)) finalTitle = translated;
+                    }
+
+                    Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        item.Title = finalTitle; // Cập nhật tên mới đã dịch
                         item.ThumbnailUrl = meta.Data.ThumbnailUrl;
                         item.Duration = meta.Data.Duration;
                         item.Status = "Pending";
-                        // Bắt đầu tải sau khi có thông tin
                         _ = ProcessDownloadQueue(item);
-                    }
-                    else
-                    {
-                        item.Status = "Error";
-                        item.Title = "Lỗi lấy thông tin";
-                        LogMessage = meta.ErrorOutput;
-                    }
-                });
+                    });
+                }
+                else
+                {
+                    Application.Current.Dispatcher.Invoke(() => { item.Status = "Error"; item.Title = "Lỗi info"; LogMessage = meta.ErrorOutput; });
+                }
             });
         }
 
         private async Task ProcessDownloadQueue(DownloadItem item)
         {
-            // Chờ đến lượt tải (Semaphore)
             await _concurrencyLimiter.WaitAsync(item.Cts.Token);
-
             try
             {
                 if (item.Cts.IsCancellationRequested) return;
-
                 Application.Current.Dispatcher.Invoke(() => { item.Status = "Starting..."; item.IsDownloading = true; });
 
                 var progressIndicator = new Progress<SimpleProgress>(p =>
@@ -284,24 +219,24 @@ namespace YoutubeDownloaderWpf.ViewModels
                     });
                 });
 
-                // Gọi service tải thật
+                // --- SỬA LỖI TÊN FILE TIẾNG HÀN/TRUNG BỊ MÃ HÓA ---
+                // Nếu đang bật chế độ Dịch -> Dùng tên trong item.Title (đã là tiếng Anh, an toàn).
+                // Nếu KHÔNG dịch -> Truyền null (hoặc rỗng) để yt-dlp tự xử lý tên gốc (không bị lỗi -uXXXX).
+                string nameForDownload = IsAutoTranslate ? item.Title : null;
+
                 var result = await _youtubeService.DownloadVideoAsync(
                     item.Url,
                     OutputFolderPath,
+                    nameForDownload, // <--- Đổi item.Title thành biến này
                     GetSubLanguages(),
                     CookieFilePath,
-                    IsAudioOnly, // Truyền tham số MP3
+                    IsAudioOnly,
                     progressIndicator,
                     item.Cts.Token);
 
                 Application.Current.Dispatcher.Invoke(() =>
                 {
-                    if (result.Success)
-                    {
-                        item.Status = "Completed";
-                        item.Progress = 100;
-                        if (!string.IsNullOrEmpty(result.Data)) item.Title = Path.GetFileName(result.Data);
-                    }
+                    if (result.Success) { item.Status = "Completed"; item.Progress = 100; }
                     else
                     {
                         item.Status = item.Cts.IsCancellationRequested ? "Cancelled" : "Error";
@@ -320,7 +255,6 @@ namespace YoutubeDownloaderWpf.ViewModels
                 UpdateTotalStatus();
             }
         }
-
         [RelayCommand] private void CancelItem(DownloadItem item) { item?.Cts.Cancel(); }
         [RelayCommand] private void CancelAll() { foreach (var i in Downloads) CancelItem(i); }
     }
