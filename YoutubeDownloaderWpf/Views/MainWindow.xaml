@@ -38,11 +38,12 @@
             Mode="PrimaryMid">
             <DockPanel>
                 <TextBlock
+                    Foreground="White"
                     Margin="0,0,20,0"
                     VerticalAlignment="Center"
                     FontSize="18"
                     FontWeight="Bold"
-                    Text="YT DOWNLOADER" />
+                    Text="YT DOWNLOADER Pro.ST" />
 
                 <Button
                     Margin="10,0"
@@ -119,28 +120,42 @@
                     Content="Sub Anh"
                     IsChecked="{Binding IsSubEn}" />
 
-                <md:PopupBox
-                    Margin="0,0,10,0"
-                    StaysOpen="True"
-                    ToolTip="Cài đặt Cookies">
+                <!-- MENU COOKIES NÂNG CẤP -->
+                <md:PopupBox StaysOpen="True" ToolTip="Cài đặt Cookies" Margin="0,0,10,0">
                     <md:PopupBox.ToggleContent>
                         <StackPanel Orientation="Horizontal">
-                            <md:PackIcon Kind="Cookie" />
-                            <TextBlock Margin="5,0" Text="Cookies" />
+                            <!-- Đổi màu icon: Màu Tím nếu có Cookie, Màu Xám nếu không -->
+                            <md:PackIcon Kind="Cookie" 
+                                         Foreground="{Binding CookieFilePath, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                            <!-- Chú thích nhanh: Nếu có path thì hiện "Đã bật", ko thì "Tắt" -->
+                            <TextBlock Text="Cookies" Margin="5,0"/>
                         </StackPanel>
                     </md:PopupBox.ToggleContent>
-                    <StackPanel Width="200" Margin="10">
-                        <Button Command="{Binding OpenLoginCommand}" Content="Đăng nhập Web" />
-                        <Button
-                            Margin="0,5"
-                            Command="{Binding ClearCookiesCommand}"
-                            Content="Xóa Cookies"
-                            Style="{StaticResource MaterialDesignOutlinedButton}" />
-                        <TextBlock
-                            FontSize="10"
-                            Opacity="0.6"
-                            Text="{Binding CookieFilePath}"
-                            TextWrapping="Wrap" />
+
+                    <StackPanel Width="250" Margin="10">
+                        <TextBlock Text="QUẢN LÝ COOKIES" FontWeight="Bold" Margin="0,0,0,5" HorizontalAlignment="Center"/>
+
+                        <!-- Hiển thị đường dẫn file đang dùng -->
+                        <TextBox Text="{Binding CookieFilePath}" 
+                                 md:HintAssist.Hint="Chưa có file Cookies nào"
+                                 IsReadOnly="True" FontSize="10" Margin="0,0,0,10"/>
+
+                        <!-- Lựa chọn 1: Đăng nhập mới -->
+                        <Button Command="{Binding OpenLoginCommand}" 
+                                Content="1. Đăng nhập &amp; Lấy mới" 
+                                Margin="0,0,0,5" ToolTip="Mở trình duyệt để lấy cookie mới"/>
+
+                        <!-- Lựa chọn 2: Chọn file có sẵn -->
+                        <Button Command="{Binding SelectCookieFileCommand}" 
+                                Content="2. Chọn file có sẵn (.txt)" 
+                                Style="{StaticResource MaterialDesignOutlinedButton}"
+                                Margin="0,0,0,5" ToolTip="Chọn file cookies.txt bạn đã lưu"/>
+
+                        <!-- Lựa chọn 3: Xóa -->
+                        <Button Command="{Binding ClearCookiesCommand}" 
+                                Content="3. Xóa / Hủy dùng" 
+                                Background="Red" BorderBrush="Red"
+                                Margin="0,5,0,0"/>
                     </StackPanel>
                 </md:PopupBox>
 

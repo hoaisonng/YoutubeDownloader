@@ -13,14 +13,17 @@ namespace YoutubeDownloaderWpf.ViewModels
     {
         private readonly IYoutubeService _youtubeService;
         private readonly SemaphoreSlim _concurrencyLimiter;
+        private const string ConfigFile = "config.cfg"; // File lưu cấu hình
 
         [ObservableProperty] private string inputUrl;
+
+        // Khi biến này thay đổi, ta sẽ lưu lại cấu hình ngay lập tức
         [ObservableProperty] private string cookieFilePath;
+        partial void OnCookieFilePathChanged(string value) => SaveConfig();
+
         [ObservableProperty] private bool isSubVi = false;
         [ObservableProperty] private bool isSubEn = false;
         [ObservableProperty] private bool isAudioOnly;
-
-        // MỚI: Biến bật tắt chế độ tự động dịch
         [ObservableProperty] private bool isAutoTranslate = false;
 
         [ObservableProperty] private string logMessage;
@@ -38,10 +41,56 @@ namespace YoutubeDownloaderWpf.ViewModels
         {
             _youtubeService = youtubeService;
             _concurrencyLimiter = new SemaphoreSlim(3);
+
+            // 1. Load thư mục lưu trữ mặc định
             OutputFolderPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Downloads");
             if (!Directory.Exists(OutputFolderPath)) Directory.CreateDirectory(OutputFolderPath);
+
+            // 2. Load cấu hình Cookies cũ (NẾU CÓ)
+            LoadConfig();
+
             _ = InitializeApp();
         }
+
+        // --- HÀM LOAD/SAVE CẤU HÌNH ---
+        private void LoadConfig()
+        {
+            try
+            {
+                string cfgPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ConfigFile);
+                if (File.Exists(cfgPath))
+                {
+                    string savedPath = File.ReadAllText(cfgPath).Trim();
+                    // Chỉ load nếu file cookie đó thực sự còn tồn tại
+                    if (File.Exists(savedPath))
+                    {
+                        CookieFilePath = savedPath;
+                        LogMessage = "Đã khôi phục Cookies từ phiên trước.";
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private void SaveConfig()
+        {
+            try
+            {
+                string cfgPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ConfigFile);
+                if (string.IsNullOrEmpty(CookieFilePath))
+                {
+                    // Nếu xóa cookie thì xóa file config luôn
+                    if (File.Exists(cfgPath)) File.Delete(cfgPath);
+                }
+                else
+                {
+                    // Lưu đường dẫn vào file
+                    File.WriteAllText(cfgPath, CookieFilePath);
+                }
+            }
+            catch { }
+        }
+        // ------------------------------
 
         private string GetSubLanguages()
         {
@@ -93,12 +142,45 @@ namespace YoutubeDownloaderWpf.ViewModels
             });
         }
 
+        // --- CÁC LỆNH XỬ LÝ COOKIES ---
+
+        // 1. Đăng nhập mới và lấy Cookies
         [RelayCommand]
         private void OpenLogin()
         {
             var loginWin = new LoginWindow();
-            if (loginWin.ShowDialog() == true) { CookieFilePath = loginWin.SavedCookiePath; LogMessage = "Đã cập nhật Cookies!"; }
+            if (loginWin.ShowDialog() == true)
+            {
+                CookieFilePath = loginWin.SavedCookiePath;
+                LogMessage = "Đã cập nhật và lưu Cookies mới!";
+            }
         }
+
+        // 2. Chọn file Cookies có sẵn (.txt) từ máy tính
+        [RelayCommand]
+        private void SelectCookieFile()
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*",
+                Title = "Chọn file Cookies (Netscape format)"
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                CookieFilePath = dialog.FileName;
+                LogMessage = "Đã chọn file Cookies: " + Path.GetFileName(CookieFilePath);
+            }
+        }
+
+        // 3. Xóa/Hủy dùng Cookies
+        [RelayCommand]
+        private void ClearCookies()
+        {
+            CookieFilePath = "";
+            LogMessage = "Đã xóa Cookies. Chế độ khách.";
+        }
+        // ------------------------------
 
         [RelayCommand]
         private void OpenPlaylist()
@@ -137,8 +219,6 @@ namespace YoutubeDownloaderWpf.ViewModels
             finally { IsBusyWithTools = false; }
         }
 
-        [RelayCommand] private void ClearCookies() { CookieFilePath = ""; LogMessage = "Đã xóa Cookies."; }
-
         [RelayCommand]
         private async Task AddDownload()
         {
@@ -162,7 +242,6 @@ namespace YoutubeDownloaderWpf.ViewModels
             else { QueueVideo(urlToAdd); UpdateTotalStatus(); }
         }
 
-        // --- SỬA LOGIC: Lấy thông tin -> Dịch (nếu cần) -> Tải ---
         private async void QueueVideo(string url)
         {
             var item = new DownloadItem { Url = url, Title = "Đang lấy thông tin...", Status = "Checking..." };
@@ -171,15 +250,11 @@ namespace YoutubeDownloaderWpf.ViewModels
             await Task.Run(async () =>
             {
                 var meta = await _youtubeService.GetVideoMetadataAsync(url, CookieFilePath);
-
-                // Logic Dịch thuật
                 if (meta.Success && meta.Data != null)
                 {
                     string finalTitle = meta.Data.Title;
-
                     if (IsAutoTranslate)
                     {
-                        // Gọi hàm dịch sang tiếng Anh
                         Application.Current.Dispatcher.Invoke(() => item.Status = "Translating...");
                         string translated = await _youtubeService.TranslateToEnglishAsync(finalTitle);
                         if (!string.IsNullOrEmpty(translated)) finalTitle = translated;
@@ -187,7 +262,7 @@ namespace YoutubeDownloaderWpf.ViewModels
 
                     Application.Current.Dispatcher.Invoke(() =>
                     {
-                        item.Title = finalTitle; // Cập nhật tên mới đã dịch
+                        item.Title = finalTitle;
                         item.ThumbnailUrl = meta.Data.ThumbnailUrl;
                         item.Duration = meta.Data.Duration;
                         item.Status = "Pending";
@@ -214,7 +289,7 @@ namespace YoutubeDownloaderWpf.ViewModels
                     Application.Current.Dispatcher.Invoke(() =>
                     {
                         item.Progress = p.Progress * 100;
-                        item.Speed = p.DownloadSpeed; // Đây là chỗ gán chữ "Downloading..."
+                        item.Speed = p.DownloadSpeed;
                         item.Status = $"{(p.Progress * 100):0}%";
                     });
                 });
@@ -237,10 +312,7 @@ namespace YoutubeDownloaderWpf.ViewModels
                     {
                         item.Status = "Completed";
                         item.Progress = 100;
-
-                        // [FIX] Xóa chữ "Downloading..." ở dòng Speed đi
                         item.Speed = "";
-                        // Hoặc bạn có thể để: item.Speed = "File saved";
                     }
                     else
                     {
@@ -249,17 +321,10 @@ namespace YoutubeDownloaderWpf.ViewModels
                     }
                 });
             }
-            catch (Exception ex)
-            {
-                Application.Current.Dispatcher.Invoke(() => { item.Status = "Error"; LogMessage = ex.Message; });
-            }
-            finally
-            {
-                Application.Current.Dispatcher.Invoke(() => item.IsDownloading = false);
-                _concurrencyLimiter.Release();
-                UpdateTotalStatus();
-            }
+            catch (Exception ex) { Application.Current.Dispatcher.Invoke(() => { item.Status = "Error"; LogMessage = ex.Message; }); }
+            finally { Application.Current.Dispatcher.Invoke(() => item.IsDownloading = false); _concurrencyLimiter.Release(); UpdateTotalStatus(); }
         }
+
         [RelayCommand] private void CancelItem(DownloadItem item) { item?.Cts.Cancel(); }
         [RelayCommand] private void CancelAll() { foreach (var i in Downloads) CancelItem(i); }
     }
