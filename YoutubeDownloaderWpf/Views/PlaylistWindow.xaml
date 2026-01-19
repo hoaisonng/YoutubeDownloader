@@ -2,10 +2,11 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
-        Title="Chọn Video trong Playlist" Height="500" Width="800" WindowStartupLocation="CenterScreen"
+        Title="Chọn Video trong Playlist" Height="600" Width="900" WindowStartupLocation="CenterScreen"
         TextElement.Foreground="{DynamicResource MaterialDesignBody}"
         Background="{DynamicResource MaterialDesignPaper}"
         FontFamily="{DynamicResource MaterialDesignFont}">
+
     <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -13,21 +14,77 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
+        <!-- HEADER -->
         <DockPanel LastChildFill="True">
-            <Button Content="Quét" Click="GetList_Click" DockPanel.Dock="Right" Margin="10,0,0,0"/>
-            <TextBox Name="txtPlaylistUrl" md:HintAssist.Hint="Dán link Playlist vào đây..." VerticalAlignment="Center"/>
+            <Button Name="btnScan" Content="Quét" Click="GetList_Click" DockPanel.Dock="Right" Margin="10,0,0,0" Style="{StaticResource MaterialDesignRaisedButton}"/>
+            <TextBox Name="txtPlaylistUrl" md:HintAssist.Hint="Dán link Playlist vào đây..." VerticalAlignment="Center" FontSize="14"/>
         </DockPanel>
 
-        <DataGrid Name="dgList" Grid.Row="1" Margin="0,10" AutoGenerateColumns="False" CanUserAddRows="False">
+        <!-- LIST VIDEO -->
+        <!-- RowHeight="80": Tăng chiều cao dòng để chứa vừa ảnh -->
+        <DataGrid Name="dgList" Grid.Row="1" Margin="0,10" 
+                  AutoGenerateColumns="False" 
+                  CanUserAddRows="False"
+                  SelectionUnit="FullRow"
+                  GridLinesVisibility="Horizontal"
+                  HeadersVisibility="Column"
+                  RowHeight="90" 
+                  VerticalScrollBarVisibility="Auto">
+
             <DataGrid.Columns>
-                <DataGridCheckBoxColumn Header="Chọn" Binding="{Binding IsSelected}"/>
-                <DataGridTextColumn Header="URL Video" Binding="{Binding Url}" Width="*"/>
+                <!-- Cột 1: Checkbox -->
+                <DataGridCheckBoxColumn Binding="{Binding IsSelected}" 
+                                        ElementStyle="{StaticResource MaterialDesignDataGridCheckBoxColumnStyle}"
+                                        EditingElementStyle="{StaticResource MaterialDesignDataGridCheckBoxColumnEditingStyle}">
+                    <DataGridCheckBoxColumn.Header>
+                        <md:PackIcon Kind="CheckAll" />
+                    </DataGridCheckBoxColumn.Header>
+                </DataGridCheckBoxColumn>
+
+                <!-- Cột 2: Thumbnail & Info (Custom Template) -->
+                <DataGridTemplateColumn Header="Thông tin Video" Width="*">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Grid Margin="5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <!-- Độ rộng ảnh -->
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Thumbnail -->
+                                <Border CornerRadius="4" ClipToBounds="True" Background="#222">
+                                    <Image Source="{Binding ThumbnailUrl}" Stretch="UniformToFill"/>
+                                </Border>
+
+                                <!-- Thông tin bên phải -->
+                                <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+                                    <!-- Tiêu đề -->
+                                    <TextBlock Text="{Binding Title}" 
+                                               FontWeight="Bold" 
+                                               TextTrimming="CharacterEllipsis" 
+                                               ToolTip="{Binding Title}"
+                                               FontSize="14"
+                                               MaxHeight="40"/>
+
+                                    <!-- URL nằm dưới -->
+                                    <TextBlock Text="{Binding Url}" 
+                                               FontSize="11" 
+                                               Opacity="0.6" 
+                                               TextTrimming="CharacterEllipsis" 
+                                               Margin="0,4,0,0"/>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
             </DataGrid.Columns>
         </DataGrid>
 
+        <!-- FOOTER -->
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
-            <TextBlock Name="lblStatus" VerticalAlignment="Center" Margin="0,0,10,0" FontStyle="Italic"/>
-            <Button Content="Thêm vào hàng đợi" Click="Confirm_Click" Style="{StaticResource MaterialDesignRaisedButton}"/>
+            <TextBlock Name="lblStatus" VerticalAlignment="Center" Margin="0,0,15,0" FontStyle="Italic" Opacity="0.7"/>
+            <Button Content="Thêm vào hàng đợi" Click="Confirm_Click" Style="{StaticResource MaterialDesignRaisedButton}" Width="150"/>
         </StackPanel>
     </Grid>
 </Window>

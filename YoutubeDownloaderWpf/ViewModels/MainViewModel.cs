@@ -214,20 +214,17 @@ namespace YoutubeDownloaderWpf.ViewModels
                     Application.Current.Dispatcher.Invoke(() =>
                     {
                         item.Progress = p.Progress * 100;
-                        item.Speed = p.DownloadSpeed;
+                        item.Speed = p.DownloadSpeed; // Đây là chỗ gán chữ "Downloading..."
                         item.Status = $"{(p.Progress * 100):0}%";
                     });
                 });
 
-                // --- SỬA LỖI TÊN FILE TIẾNG HÀN/TRUNG BỊ MÃ HÓA ---
-                // Nếu đang bật chế độ Dịch -> Dùng tên trong item.Title (đã là tiếng Anh, an toàn).
-                // Nếu KHÔNG dịch -> Truyền null (hoặc rỗng) để yt-dlp tự xử lý tên gốc (không bị lỗi -uXXXX).
                 string nameForDownload = IsAutoTranslate ? item.Title : null;
 
                 var result = await _youtubeService.DownloadVideoAsync(
                     item.Url,
                     OutputFolderPath,
-                    nameForDownload, // <--- Đổi item.Title thành biến này
+                    nameForDownload,
                     GetSubLanguages(),
                     CookieFilePath,
                     IsAudioOnly,
@@ -236,7 +233,15 @@ namespace YoutubeDownloaderWpf.ViewModels
 
                 Application.Current.Dispatcher.Invoke(() =>
                 {
-                    if (result.Success) { item.Status = "Completed"; item.Progress = 100; }
+                    if (result.Success)
+                    {
+                        item.Status = "Completed";
+                        item.Progress = 100;
+
+                        // [FIX] Xóa chữ "Downloading..." ở dòng Speed đi
+                        item.Speed = "";
+                        // Hoặc bạn có thể để: item.Speed = "File saved";
+                    }
                     else
                     {
                         item.Status = item.Cts.IsCancellationRequested ? "Cancelled" : "Error";

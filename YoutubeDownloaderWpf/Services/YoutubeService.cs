@@ -33,6 +33,8 @@ namespace YoutubeDownloaderWpf.Services
         Task<SimpleRunResult<string[]>> GetPlaylistUrlsAsync(string playlistUrl);
         Task<SimpleRunResult<DownloadItem>> GetVideoMetadataAsync(string url, string cookiePath);
         Task<string> TranslateToEnglishAsync(string text);
+        // Thêm dòng này vào Interface
+        Task<SimpleRunResult<List<Views.PlaylistVideoItem>>> GetPlaylistItemsAsync(string playlistUrl);
     }
 
     public class YoutubeService : IYoutubeService
@@ -374,6 +376,67 @@ namespace YoutubeDownloaderWpf.Services
                         else { await fileStream.WriteAsync(buffer, 0, read); totalRead += read; if (totalBytes != -1 && progress != null) progress.Report((double)totalRead / totalBytes * 100); }
                     } while (isMoreToRead);
                 }
+            }
+        }
+        // --- HÀM MỚI: QUÉT PLAYLIST LẤY CẢ ẢNH VÀ TÊN ---
+        public async Task<SimpleRunResult<List<Views.PlaylistVideoItem>>> GetPlaylistItemsAsync(string playlistUrl)
+        {
+            // --flat-playlist: Quét nhanh (không check từng video)
+            // --dump-json: Lấy thông tin chi tiết
+            string args = $"--flat-playlist --dump-json --no-check-certificate --ignore-errors \"{playlistUrl}\"";
+
+            var items = new List<Views.PlaylistVideoItem>();
+            var errorLog = new StringBuilder();
+
+            try
+            {
+                await RunProcessAsync(YtDlpPath, args, CancellationToken.None,
+                    (line) =>
+                    {
+                        if (string.IsNullOrWhiteSpace(line)) return;
+                        try
+                        {
+                            // Parse JSON đơn giản bằng Regex để lấy thông tin
+                            // Lý do không dùng thư viện JSON: Để giữ code nhẹ và nhanh, yt-dlp trả về mỗi dòng là 1 JSON object
+                            string id = Regex.Match(line, "\"id\":\\s*\"(.*?)\"").Groups[1].Value;
+                            string title = Regex.Match(line, "\"title\":\\s*\"(.*?)\"").Groups[1].Value;
+                            string url = Regex.Match(line, "\"url\":\\s*\"(.*?)\"").Groups[1].Value;
+                            string duration = Regex.Match(line, "\"duration\":\\s*(\\d+)").Groups[1].Value;
+
+                            // Giải mã unicode title
+                            try { title = Regex.Unescape(title); } catch { }
+
+                            // Nếu url rỗng (do flat-playlist chỉ trả về id), tự tạo url
+                            if (string.IsNullOrEmpty(url) && !string.IsNullOrEmpty(id))
+                            {
+                                url = $"https://www.youtube.com/watch?v={id}";
+                            }
+
+                            if (!string.IsNullOrEmpty(url))
+                            {
+                                items.Add(new Views.PlaylistVideoItem
+                                {
+                                    IsSelected = true,
+                                    Url = url,
+                                    Title = string.IsNullOrEmpty(title) ? "Video không tên" : title,
+                                    // Tự tạo link thumbnail từ ID (nhanh hơn chờ yt-dlp)
+                                    ThumbnailUrl = !string.IsNullOrEmpty(id) ? $"https://i.ytimg.com/vi/{id}/mqdefault.jpg" : "",
+                                    Duration = duration // Giây
+                                });
+                            }
+                        }
+                        catch { }
+                    },
+                    (err) => errorLog.AppendLine(err));
+
+                if (items.Count == 0)
+                    return new SimpleRunResult<List<Views.PlaylistVideoItem>>(false, "Không tìm thấy video hoặc playlist riêng tư.\n" + errorLog.ToString(), null);
+
+                return new SimpleRunResult<List<Views.PlaylistVideoItem>>(true, null, items);
+            }
+            catch (Exception ex)
+            {
+                return new SimpleRunResult<List<Views.PlaylistVideoItem>>(false, ex.Message, null);
             }
         }
     }

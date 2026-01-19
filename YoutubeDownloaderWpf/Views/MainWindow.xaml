@@ -1,108 +1,176 @@
-﻿<Window x:Class="YoutubeDownloaderWpf.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
-        xmlns:vm="clr-namespace:YoutubeDownloaderWpf.ViewModels"
-        mc:Ignorable="d"
-        Title="Youtube Downloader Pro" Height="700" Width="1400"
-        WindowStartupLocation="CenterScreen"
-        TextElement.Foreground="{DynamicResource MaterialDesignBody}"
-        Background="{DynamicResource MaterialDesignPaper}"
-        FontFamily="{DynamicResource MaterialDesignFont}">
+﻿<Window
+    x:Class="YoutubeDownloaderWpf.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
+    xmlns:vm="clr-namespace:YoutubeDownloaderWpf.ViewModels"
+    Title="Youtube Downloader Pro"
+    Width="1400"
+    Height="700"
+    Background="{DynamicResource MaterialDesignPaper}"
+    FontFamily="{DynamicResource MaterialDesignFont}"
+    TextElement.Foreground="{DynamicResource MaterialDesignBody}"
+    WindowStartupLocation="CenterScreen"
+    mc:Ignorable="d">
 
-    <!-- === PHẦN QUAN TRỌNG VỪA THÊM ĐỂ SỬA LỖI === -->
+    <!--  === PHẦN QUAN TRỌNG VỪA THÊM ĐỂ SỬA LỖI ===  -->
     <Window.Resources>
-        <!-- Khai báo bộ chuyển đổi True/False thành Ẩn/Hiện -->
-        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        <!--  Khai báo bộ chuyển đổi True/False thành Ẩn/Hiện  -->
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
     </Window.Resources>
-    <!-- =========================================== -->
+    <!--  ===========================================  -->
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- 1. HEADER & INPUT -->
-        <md:ColorZone Mode="PrimaryMid" Padding="16" Grid.Row="0" Effect="{DynamicResource MaterialDesignShadowDepth2}">
+        <!--  1. HEADER & INPUT  -->
+        <md:ColorZone
+            Grid.Row="0"
+            Padding="16"
+            Effect="{DynamicResource MaterialDesignShadowDepth2}"
+            Mode="PrimaryMid">
             <DockPanel>
-                <TextBlock Text="YT DOWNLOADER" VerticalAlignment="Center" Margin="0,0,20,0" FontWeight="Bold" FontSize="18"/>
+                <TextBlock
+                    Margin="0,0,20,0"
+                    VerticalAlignment="Center"
+                    FontSize="18"
+                    FontWeight="Bold"
+                    Text="YT DOWNLOADER" />
 
-                <Button Command="{Binding DownloadMissingToolsCommand}" 
-                        Visibility="{Binding AreToolsMissing, Converter={StaticResource BooleanToVisibilityConverter}}"
-                        Style="{StaticResource MaterialDesignRaisedButton}" 
-                        md:ButtonAssist.CornerRadius="15"
-                        Content="TẢI TOOLS" DockPanel.Dock="Right" Margin="10,0"/>
+                <Button
+                    Margin="10,0"
+                    md:ButtonAssist.CornerRadius="15"
+                    Command="{Binding DownloadMissingToolsCommand}"
+                    Content="TẢI TOOLS"
+                    DockPanel.Dock="Right"
+                    Style="{StaticResource MaterialDesignRaisedButton}"
+                    Visibility="{Binding AreToolsMissing, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
-                <Button Command="{Binding AddDownloadCommand}" IsDefault="True"
-                        Style="{StaticResource MaterialDesignFloatingActionMiniButton}" 
-                        DockPanel.Dock="Right" Margin="10,0,0,0">
-                    <md:PackIcon Kind="Plus" Width="24" Height="24"/>
+                <Button
+                    Margin="10,0,0,0"
+                    Command="{Binding AddDownloadCommand}"
+                    DockPanel.Dock="Right"
+                    IsDefault="True"
+                    Style="{StaticResource MaterialDesignFloatingActionMiniButton}">
+                    <md:PackIcon
+                        Width="24"
+                        Height="24"
+                        Kind="Plus" />
                 </Button>
 
-                <TextBox Text="{Binding InputUrl, UpdateSourceTrigger=PropertyChanged}"
-                         md:HintAssist.Hint="Dán link Youtube vào đây..."
-                         Style="{StaticResource MaterialDesignFloatingHintTextBox}"
-                         Foreground="White" CaretBrush="White" FontSize="14" VerticalAlignment="Center"/>
+                <TextBox
+                    VerticalAlignment="Center"
+                    md:HintAssist.Hint="Dán link Youtube vào đây..."
+                    CaretBrush="White"
+                    FontSize="14"
+                    Foreground="White"
+                    Style="{StaticResource MaterialDesignFloatingHintTextBox}"
+                    Text="{Binding InputUrl, UpdateSourceTrigger=PropertyChanged}" />
             </DockPanel>
         </md:ColorZone>
 
-        <!-- 2. TOOLBAR CÀI ĐẶT -->
+        <!--  2. TOOLBAR CÀI ĐẶT  -->
         <Grid Grid.Row="1" Margin="10">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
 
-                <Button Style="{StaticResource MaterialDesignOutlinedButton}" Command="{Binding ChangeOutputFolderCommand}" ToolTip="Đổi thư mục lưu" Margin="0,0,10,0">
+                <Button
+                    Margin="0,0,10,0"
+                    Command="{Binding ChangeOutputFolderCommand}"
+                    Style="{StaticResource MaterialDesignOutlinedButton}"
+                    ToolTip="Đổi thư mục lưu">
                     <StackPanel Orientation="Horizontal">
-                        <md:PackIcon Kind="FolderOpen" Margin="0,0,8,0"/>
-                        <TextBlock Text="{Binding OutputFolderPath}" MaxWidth="200" TextTrimming="CharacterEllipsis"/>
+                        <md:PackIcon Margin="0,0,8,0" Kind="FolderOpen" />
+                        <TextBlock
+                            MaxWidth="200"
+                            Text="{Binding OutputFolderPath}"
+                            TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                 </Button>
 
-                <CheckBox IsChecked="{Binding IsAudioOnly}" Content="Chỉ tải MP3" ToolTip="Audio Only" Margin="0,0,10,0"/>
-                <!-- MỚI: Checkbox dịch thuật -->
-                <CheckBox IsChecked="{Binding IsAutoTranslate}" Content="Dịch tên sang Anh" ToolTip="Tự động dịch tiêu đề video sang tiếng Anh" Margin="0,0,10,0"/>
-                <CheckBox IsChecked="{Binding IsSubVi}" Content="Sub Việt" Margin="0,0,10,0"/>
-                <CheckBox IsChecked="{Binding IsSubEn}" Content="Sub Anh" Margin="0,0,10,0"/>
+                <CheckBox
+                    Margin="0,0,10,0"
+                    Content="Chỉ tải MP3"
+                    IsChecked="{Binding IsAudioOnly}"
+                    ToolTip="Audio Only" />
+                <!--  MỚI: Checkbox dịch thuật  -->
+                <CheckBox
+                    Margin="0,0,10,0"
+                    Content="Dịch tên sang Anh"
+                    IsChecked="{Binding IsAutoTranslate}"
+                    ToolTip="Tự động dịch tiêu đề video sang tiếng Anh" />
+                <CheckBox
+                    Margin="0,0,10,0"
+                    Content="Sub Việt"
+                    IsChecked="{Binding IsSubVi}" />
+                <CheckBox
+                    Margin="0,0,10,0"
+                    Content="Sub Anh"
+                    IsChecked="{Binding IsSubEn}" />
 
-                <md:PopupBox StaysOpen="True" ToolTip="Cài đặt Cookies" Margin="0,0,10,0">
+                <md:PopupBox
+                    Margin="0,0,10,0"
+                    StaysOpen="True"
+                    ToolTip="Cài đặt Cookies">
                     <md:PopupBox.ToggleContent>
                         <StackPanel Orientation="Horizontal">
-                            <md:PackIcon Kind="Cookie"/>
-                            <TextBlock Text="Cookies" Margin="5,0"/>
+                            <md:PackIcon Kind="Cookie" />
+                            <TextBlock Margin="5,0" Text="Cookies" />
                         </StackPanel>
                     </md:PopupBox.ToggleContent>
                     <StackPanel Width="200" Margin="10">
-                        <Button Command="{Binding OpenLoginCommand}" Content="Đăng nhập Web"/>
-                        <Button Command="{Binding ClearCookiesCommand}" Content="Xóa Cookies" Margin="0,5" Style="{StaticResource MaterialDesignOutlinedButton}"/>
-                        <TextBlock Text="{Binding CookieFilePath}" TextWrapping="Wrap" FontSize="10" Opacity="0.6"/>
+                        <Button Command="{Binding OpenLoginCommand}" Content="Đăng nhập Web" />
+                        <Button
+                            Margin="0,5"
+                            Command="{Binding ClearCookiesCommand}"
+                            Content="Xóa Cookies"
+                            Style="{StaticResource MaterialDesignOutlinedButton}" />
+                        <TextBlock
+                            FontSize="10"
+                            Opacity="0.6"
+                            Text="{Binding CookieFilePath}"
+                            TextWrapping="Wrap" />
                     </StackPanel>
                 </md:PopupBox>
 
-                <Button Command="{Binding OpenPlaylistCommand}" Style="{StaticResource MaterialDesignFlatButton}" Content="Quét Playlist"/>
-                <!-- Nút Cập nhật Mới -->
-                <Button Command="{Binding UpdateToolsCommand}" 
-        Style="{StaticResource MaterialDesignOutlinedButton}" 
-        Content="Cập nhật yt-dlp" 
-        Margin="10,0,0,0"
-        ToolTip="Bấm vào đây nếu gặp lỗi 'n challenge' hoặc tải thất bại"/>
+                <Button
+                    Command="{Binding OpenPlaylistCommand}"
+                    Content="Quét Playlist"
+                    Style="{StaticResource MaterialDesignFlatButton}" />
+                <!--  Nút Cập nhật Mới  -->
+                <Button
+                    Margin="10,0,0,0"
+                    Command="{Binding UpdateToolsCommand}"
+                    Content="Cập nhật yt-dlp"
+                    Style="{StaticResource MaterialDesignFlatButton}"
+                    ToolTip="Bấm vào đây nếu gặp lỗi 'n challenge' hoặc tải thất bại" />
             </StackPanel>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal">
-                <Button Command="{Binding OpenOutputFolderCommand}" Content="Mở thư mục" Style="{StaticResource MaterialDesignFlatButton}"/>
-                <Button Command="{Binding CancelAllCommand}" Content="Hủy tất cả" Foreground="Red" Style="{StaticResource MaterialDesignFlatButton}"/>
+                <Button
+                    Command="{Binding OpenOutputFolderCommand}"
+                    Content="Mở thư mục"
+                    Style="{StaticResource MaterialDesignFlatButton}" />
+                <Button
+                    Command="{Binding CancelAllCommand}"
+                    Content="Hủy tất cả"
+                    Foreground="Red"
+                    Style="{StaticResource MaterialDesignFlatButton}" />
             </StackPanel>
         </Grid>
 
-        <!-- 3. DANH SÁCH TẢI -->
+        <!--  3. DANH SÁCH TẢI  -->
         <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
             <Border Padding="10">
                 <ItemsControl ItemsSource="{Binding Downloads}">
@@ -111,38 +179,73 @@
                             <md:Card Margin="0,0,0,10" Padding="10">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="120"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="120" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
 
-                                    <Border CornerRadius="4" ClipToBounds="True" Background="#EEE">
-                                        <Image Source="{Binding ThumbnailUrl}" Stretch="UniformToFill"/>
+                                    <Border
+                                        Background="#EEE"
+                                        ClipToBounds="True"
+                                        CornerRadius="4">
+                                        <Image Source="{Binding ThumbnailUrl}" Stretch="UniformToFill" />
                                     </Border>
-                                    <Border Background="Black" Opacity="0.7" VerticalAlignment="Bottom" HorizontalAlignment="Right" CornerRadius="2" Margin="4">
-                                        <TextBlock Text="{Binding Duration}" Foreground="White" FontSize="10" Padding="2"/>
+                                    <Border
+                                        Margin="4"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Bottom"
+                                        Background="Black"
+                                        CornerRadius="2"
+                                        Opacity="0.7">
+                                        <TextBlock
+                                            Padding="2"
+                                            FontSize="10"
+                                            Foreground="White"
+                                            Text="{Binding Duration}" />
                                     </Border>
 
                                     <StackPanel Grid.Column="1" Margin="10,0">
-                                        <TextBlock Text="{Binding Title}" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
-                                        <TextBlock Text="{Binding Url}" FontSize="10" Opacity="0.5" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock
+                                            FontWeight="Bold"
+                                            Text="{Binding Title}"
+                                            TextTrimming="CharacterEllipsis" />
+                                        <TextBlock
+                                            FontSize="10"
+                                            Opacity="0.5"
+                                            Text="{Binding Url}"
+                                            TextTrimming="CharacterEllipsis" />
 
                                         <Grid Margin="0,8">
-                                            <ProgressBar Value="{Binding Progress}" Maximum="100" Height="10" 
-                                                         Style="{StaticResource MaterialDesignLinearProgressBar}"
-                                                         Foreground="{DynamicResource PrimaryHueMidBrush}"/>
-                                            <TextBlock Text="{Binding Status}" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="10"/>
+                                            <ProgressBar
+                                                Height="10"
+                                                Foreground="{DynamicResource PrimaryHueMidBrush}"
+                                                Maximum="100"
+                                                Style="{StaticResource MaterialDesignLinearProgressBar}"
+                                                Value="{Binding Progress}" />
+                                            <TextBlock
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"
+                                                FontSize="10"
+                                                Text="{Binding Status}" />
                                         </Grid>
 
-                                        <TextBlock Text="{Binding Speed}" FontSize="11" Foreground="Green"/>
+                                        <TextBlock
+                                            FontSize="11"
+                                            Foreground="Green"
+                                            Text="{Binding Speed}" />
                                     </StackPanel>
 
-                                    <Button Grid.Column="2" 
-                                            Command="{Binding DataContext.CancelItemCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" 
-                                            CommandParameter="{Binding}"
-                                            Style="{StaticResource MaterialDesignIconForegroundButton}"
-                                            Visibility="{Binding IsDownloading, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <md:PackIcon Kind="StopCircleOutline" Foreground="Red" Width="30" Height="30"/>
+                                    <Button
+                                        Grid.Column="2"
+                                        Command="{Binding DataContext.CancelItemCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding}"
+                                        Style="{StaticResource MaterialDesignIconForegroundButton}"
+                                        Visibility="{Binding IsDownloading, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <md:PackIcon
+                                            Width="30"
+                                            Height="30"
+                                            Foreground="Red"
+                                            Kind="StopCircleOutline" />
                                     </Button>
                                 </Grid>
                             </md:Card>
@@ -152,17 +255,46 @@
             </Border>
         </ScrollViewer>
 
-        <!-- 4. FOOTER STATUS -->
-        <StatusBar Grid.Row="3" Padding="10">
-            <TextBox Text="{Binding LogMessage}" FontWeight="Bold" TextWrapping="WrapWithOverflow"/>
-            <Separator/>
-            <TextBlock Text="{Binding TotalStatusInfo}"/>
-            <Separator/>
-            <ProgressBar Width="100" Height="10" Value="{Binding TotalProgressValue}"/>
+        <!--  4. FOOTER STATUS  -->
+        <StatusBar
+            Grid.Row="3"
+            Padding="10"
+            Background="Transparent">
+            <!--
+                TextBox LOG:
+                - IsReadOnly="True": Chỉ đọc, không cho sửa
+                - Background="Transparent": Nền trong suốt để hợp với Dark Mode
+                - BorderThickness="0": Bỏ viền khung
+                - md:TextFieldAssist.DecorationVisibility="Hidden": Bỏ gạch chân của Material Design
+                - TextWrapping="Wrap": Tự xuống dòng nếu lỗi quá dài
+            -->
+            <TextBox
+                MaxHeight="60"
+                VerticalAlignment="Center"
+                md:TextFieldAssist.DecorationVisibility="Hidden"
+                Background="Transparent"
+                BorderThickness="0"
+                FontWeight="Bold"
+                Foreground="{DynamicResource MaterialDesignBody}"
+                IsReadOnly="True"
+                Text="{Binding LogMessage}"
+                TextWrapping="Wrap" />
+            <!--  Giới hạn chiều cao để không vỡ giao diện  -->
+
+            <Separator />
+            <TextBlock Text="{Binding TotalStatusInfo}" Foreground="WhiteSmoke"/>
+            <Separator />
+            <ProgressBar
+                Width="100"
+                Height="10"
+                Value="{Binding TotalProgressValue}" />
 
             <StackPanel Orientation="Horizontal" Visibility="{Binding IsBusyWithTools, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <TextBlock Text="Đang tải tool:" Margin="10,0"/>
-                <ProgressBar Width="100" Height="10" Value="{Binding ToolDownloadProgress}"/>
+                <TextBlock Foreground="WhiteSmoke" Margin="10,0" Text="Đang tải tool:" />
+                <ProgressBar
+                    Width="100"
+                    Height="10"
+                    Value="{Binding ToolDownloadProgress}" />
             </StackPanel>
         </StatusBar>
     </Grid>

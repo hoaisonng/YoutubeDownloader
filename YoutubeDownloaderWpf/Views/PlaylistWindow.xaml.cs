@@ -1,15 +1,20 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
+using System.Windows.Media.Imaging;
 using YoutubeDownloaderWpf.Services;
 
 namespace YoutubeDownloaderWpf.Views
 {
-    // Class đơn giản để bind lên DataGrid
+    // Cập nhật Model để chứa ảnh và tiêu đề
     public class PlaylistVideoItem
     {
         public bool IsSelected { get; set; } = true;
         public string Url { get; set; }
+        public string Title { get; set; }
+        public string ThumbnailUrl { get; set; }
+        public string Duration { get; set; }
     }
 
     public partial class PlaylistWindow : Window
@@ -28,23 +33,27 @@ namespace YoutubeDownloaderWpf.Views
             string url = txtPlaylistUrl.Text;
             if (string.IsNullOrWhiteSpace(url)) return;
 
-            lblStatus.Text = "Đang quét danh sách...";
-            var result = await _service.GetPlaylistUrlsAsync(url);
+            btnScan.IsEnabled = false;
+            lblStatus.Text = "Đang quét danh sách (sẽ mất vài giây)...";
+
+            // Gọi hàm mới GetPlaylistItemsAsync (sẽ tạo ở bước 2)
+            var result = await _service.GetPlaylistItemsAsync(url);
 
             if (result.Success)
             {
-                var items = result.Data.Select(u => new PlaylistVideoItem { Url = u }).ToList();
-                dgList.ItemsSource = items;
-                lblStatus.Text = $"Tìm thấy {items.Count} video.";
+                dgList.ItemsSource = result.Data; // Data bây giờ là List<PlaylistVideoItem>
+                lblStatus.Text = $"Tìm thấy {result.Data.Count} video.";
             }
             else
             {
                 lblStatus.Text = "Lỗi: " + result.ErrorOutput;
             }
+            btnScan.IsEnabled = true;
         }
 
         private void Confirm_Click(object sender, RoutedEventArgs e)
         {
+            // Lấy danh sách từ DataGrid
             var items = dgList.ItemsSource as List<PlaylistVideoItem>;
             if (items != null)
             {
